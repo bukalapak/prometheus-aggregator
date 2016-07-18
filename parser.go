@@ -21,16 +21,15 @@ const (
 )
 
 var (
-	labelNameREPart          = `[a-zA-Z0-9]+`
-	labelValueREPart         = `[a-zA-Z0-9.]+`
+	labelNameREPart          = `[a-zA-Z_][a-zA-Z0-9_]*`
+	labelValueREPart         = `[^;|]+`
 	labelWithValueREPart     = labelNameREPart + sampleParserLabelFromValueSeparator + labelValueREPart
-	sampleParserLabelsREPart = `(` + labelWithValueREPart +
-		`|` + labelWithValueREPart + `(` + sampleParserLabelsSeparator + labelWithValueREPart + `)+)`
+	sampleParserLabelsREPart = `(` + labelWithValueREPart + `(` + sampleParserLabelsSeparator + labelWithValueREPart + `)*)`
 
 	sampleParserSharedLabelsLineRE = regexp.MustCompile(`^` + sampleParserLabelsREPart + `$`)
 
-	metricNameREPart         = `[a-zA-Z0-9_]+`
-	sampleKindREPart         = `[a-z]{1,2}`
+	metricNameREPart         = `[a-zA-Z_:][a-zA-Z0-9_:]+`
+	sampleKindREPart         = `(c|g|hl)`
 	sampleHistogramDefREPart = `[0-9.]+;[0-9.]+;[0-9.]+`
 	// TODO(szpakas): tighter regexp with only one decimal separator
 	sampleValueREPart            = `[0-9.]+`
