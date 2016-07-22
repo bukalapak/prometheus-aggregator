@@ -48,6 +48,9 @@ type config struct {
 	// - prom: hasher based on prometheus implementation of FNV-1a hash
 	// - md5: naive MD5 implementation
 	SampleHasher string `envconfig:"default=prom"`
+
+	// Metrics path for prometheus scrape
+	MetricsPath string `envconfig:"default=/metrics"`
 }
 
 func main() {
@@ -89,7 +92,7 @@ func main() {
 		exitOnFatal(err, "UDP server init")
 	}
 
-	http.Handle("/metrics", prometheus.Handler())
+	http.Handle(cfg.MetricsPath, prometheus.Handler())
 
 	//prometheus.EnableCollectChecks(true)
 

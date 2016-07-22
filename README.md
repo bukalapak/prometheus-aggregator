@@ -144,6 +144,18 @@ MetricsPort int `envconfig:"default=9090"`
 // LogLevel is a minimal log severity required for the message to be logged.
 // Valid levels: [debug, info, warn, error, fatal, panic].
 LogLevel string `envconfig:"default=info"`
+
+// MaxProcs limits number of processors used by the app.
+MaxProcs int `envconfig:"default=0"`
+
+// SampleHasher sets hashing function used with samples.
+// Valid values:
+// - prom: hasher based on prometheus implementation of FNV-1a hash
+// - md5: naive MD5 implementation
+SampleHasher string `envconfig:"default=prom"`
+
+// Metrics path for prometheus scrape
+MetricsPath string `envconfig:"default=/metrics"`
 ```
 
 ### Running
@@ -156,6 +168,9 @@ export APP_UDP_BUFFER_SIZE="2048"
 export APP_METRICS_HOST="0.0.0.0"
 export APP_METRICS_PORT="8080"
 export APP_LOG_LEVEL="DEBUG"
+export APP_MAX_PROCS="0"
+export APP_SAMPLE_HASHER="prom"
+export APP_METRICS_PATH="/metricz"
 
 ./prometheus-aggregator
 ```
