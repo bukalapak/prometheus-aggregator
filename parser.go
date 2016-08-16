@@ -29,8 +29,8 @@ var (
 	sampleParserSharedLabelsLineRE = regexp.MustCompile(`^` + sampleParserLabelsREPart + `$`)
 
 	metricNameREPart         = `[a-zA-Z_:][a-zA-Z0-9_:]+`
-	sampleKindREPart         = `(c|g|hl)`
-	sampleHistogramDefREPart = `[0-9.]+;[0-9.]+;[0-9.]+`
+	sampleKindREPart         = `(c|g|hl|h)`
+	sampleHistogramDefREPart = `[0-9.]+(;[0-9.]+)*`
 	// TODO(szpakas): tighter regexp with only one decimal separator
 	sampleValueREPart            = `[0-9.]+`
 	sampleParserSampleLineREPart = `^` +
@@ -55,6 +55,8 @@ func parseSample(r io.Reader) ([]*sample, error) {
 			return sampleCounter
 		case string(sampleGauge):
 			return sampleGauge
+		case string(sampleHistogram):
+			return sampleHistogram
 		case string(sampleHistogramLinear):
 			return sampleHistogramLinear
 		}
@@ -73,6 +75,10 @@ func parseSample(r io.Reader) ([]*sample, error) {
 		return sampleParserSampleLineRE.MatchString(s)
 	}
 
+	isHistogramDef := func(s string) bool {
+		return regexp.MustCompile(sampleHistogramDefREPart).MatchString(s)
+	}
+
 	parseSampleLine := func(s string, sharedLabels map[string]string) *sample {
 		samplePartsSlice := strings.Split(s, sampleParserSamplePartsSeparator)
 
@@ -89,11 +95,17 @@ func parseSample(r io.Reader) ([]*sample, error) {
 		smp.value, _ = strconv.ParseFloat(samplePartsSlice[len(samplePartsSlice)-1], 10)
 
 		switch smp.kind {
-		case sampleHistogramLinear:
-			smp.histogramDef = strings.Split(samplePartsSlice[2], sampleParserHistogramDefSeparator)
+		case sampleHistogramLinear, sampleHistogram:
 			// account for histogramDef
 			if len(samplePartsSlice) == 5 {
+				smp.histogramDef = strings.Split(samplePartsSlice[2], sampleParserHistogramDefSeparator)
 				labelsMapper(samplePartsSlice[3], smp.labels)
+			} else {
+				if isHistogramDef(samplePartsSlice[2]) {
+					smp.histogramDef = strings.Split(samplePartsSlice[2], sampleParserHistogramDefSeparator)
+				} else {
+					labelsMapper(samplePartsSlice[2], smp.labels)
+				}
 			}
 		default:
 			if len(samplePartsSlice) == 4 {
@@ -116,8 +128,9 @@ func parseSample(r io.Reader) ([]*sample, error) {
 				state = sampleParserStateSample
 				continue
 			}
+			text := scanner.Text()
 
-			if isSampleLine(scanner.Text()) {
+			if isSampleLine(text) {
 				out = append(out, parseSampleLine(scanner.Text(), sharedLabels))
 				continue
 			}

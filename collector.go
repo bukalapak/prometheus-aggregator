@@ -239,6 +239,33 @@ func (c *collector) process() {
 				}
 
 				m.Observe(s.value)
+
+			case sampleHistogram:
+				m, found := c.histograms[string(h)]
+				if !found {
+					var buckets = []float64{}
+					for _, i := range s.histogramDef {
+						j, err := strconv.ParseFloat(i, 64)
+						if err != nil {
+							panic(err)
+						}
+						buckets = append(buckets, j)
+					}
+
+					m = prometheus.NewHistogram(
+						prometheus.HistogramOpts{
+							Name:        s.name,
+							Help:        "auto",
+							ConstLabels: s.labels,
+							Buckets:     buckets,
+						},
+					)
+					c.histogramsMu.Lock()
+					c.histograms[string(h)] = m
+					c.histogramsMu.Unlock()
+				}
+
+				m.Observe(s.value)
 			}
 
 			c.testHookProcessSampleDone()

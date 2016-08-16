@@ -74,6 +74,17 @@ name_of_3_metric|g|17.3`,
 				},
 			},
 		},
+		"histogram": {
+			`name_of_2_metric_seconds|h|2.0;2.2;5;7|labelA=labelValueA;label2=labelValue2|12.345`,
+			[]sample{
+				{
+					name: "name_of_2_metric_seconds", kind: sampleHistogram,
+					labels:       map[string]string{"labelA": "labelValueA", "label2": "labelValue2"},
+					value:        12.345,
+					histogramDef: []string{"2.0", "2.2", "5", "7"},
+				},
+			},
+		},
 	}
 
 	for k, tc := range cases {
