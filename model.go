@@ -16,6 +16,9 @@ const (
 	// sampleGauge represents a gauge
 	sampleGauge sampleKind = "g"
 
+	// sampleHistogram represents histogram
+	sampleHistogram sampleKind = "h"
+
 	// sampleHistogramLinear represents histogram with linearly spaced buckets.
 	// See Prometheus Go client LinearBuckets for details.
 	sampleHistogramLinear sampleKind = "hl"
