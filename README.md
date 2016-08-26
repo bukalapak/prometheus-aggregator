@@ -45,7 +45,7 @@ There is only one shared labels line allowed per packet.
 | field | desc               | allowed values |
 |-------|--------------------|----------------|
 | name  | name of the metric | a-zA-Z0-9_ |
-| type  | type of the metric | counter: c<br>gauge: g<br>histogram with linear buckets: hl |
+| type  | type of the metric | counter: c<br>gauge: g<br>histogram: h<br>histogram with linear buckets: hl |
 | type config | additional configuration for the type<br>currently used only for histograms | |
 | labels | pairs of name and value separated by semicolon (;)<br>field is optional | name: a-zA-Z0-9<br>value: a-zA-Z0-9. |
 | value | sample value<br>negative values are not yet supported | 0-9. |
@@ -55,6 +55,7 @@ There is only one shared labels line allowed per packet.
 As of now following metrics are supported:
 - counter
 - gauge
+- histogram
 - histogram with linear buckets
 
 ### Counters
@@ -66,6 +67,13 @@ As of now following metrics are supported:
 
     name_of_3_metric|g|labelA=labelValueA;label2=labelValue2|7.3
     name_of_3_metric|g|17.3
+
+### Histograms
+
+If no bucket specified, use Prometheus default buckets
+
+    name_of_1_metric_seconds|h|12.345
+    name_of_1_metric_seconds|h|0.5;1;2;5;10|labelA=labelValueA;label2=labelValue2|12.345
     
 ### Histograms with linear buckets
 
@@ -186,7 +194,7 @@ Dedicated tests for race detection:
 ## Using docker
 
 ```bash
-docker build -t prometheus-aggregator .
+docker pull rolandhawk/prometheus-aggregator
 
-docker run -it --rm -p 10901:8080 -p 10902:9090 --name prometheus_aggregator prometheus-aggregator
+docker run --rm -p 10901:8080/udp -p 10902:9090 --name prometheus_aggregator rolandhawk/prometheus-aggregator
 ```
