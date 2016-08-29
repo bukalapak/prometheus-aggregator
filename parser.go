@@ -40,6 +40,7 @@ var (
 		`(` + sampleParserLabelsREPart + `\|)?` + // optional
 		sampleValueREPart +
 		`$`
+	sampleHistogramDefRE = regexp.MustCompile(`^` + sampleHistogramDefREPart + `$`)
 	sampleParserSampleLineRE = regexp.MustCompile(sampleParserSampleLineREPart)
 )
 
@@ -76,7 +77,7 @@ func parseSample(r io.Reader) ([]*sample, error) {
 	}
 
 	isHistogramDef := func(s string) bool {
-		return regexp.MustCompile(sampleHistogramDefREPart).MatchString(s)
+		return sampleHistogramDefRE.MatchString(s)
 	}
 
 	parseSampleLine := func(s string, sharedLabels map[string]string) *sample {
