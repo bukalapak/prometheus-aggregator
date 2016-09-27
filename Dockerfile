@@ -1,8 +1,9 @@
-FROM golang:1-onbuild
-MAINTAINER Adam Szpakowski <adam@szpakowski.info>
+FROM alpine:3.1
 MAINTAINER Roland Rifandi Utama <roland_hawk@yahoo.com>
 
-# ingress: samples via UDP
-EXPOSE 8080/udp
-# egress: metrics for prometheus to scrape
-EXPOSE 9090
+WORKDIR /app
+EXPOSE 8080/udp 9090
+
+COPY ./prometheus-aggregator /app/
+
+ENTRYPOINT ["/app/prometheus-aggregator"]
