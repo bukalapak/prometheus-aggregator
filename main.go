@@ -28,7 +28,7 @@ type config struct {
 	// UDPBufferSize is a size of a buffer in bytes used for incoming samples.
 	// Sample not fitting in buffer will be partially discarded.
 	// Sync buffer size with client.
-	UDPBufferSize int `envconfig:"default=4096"`
+	UDPBufferSize int `envconfig:"default=65536"`
 
 	// MetricsHost is address on which metric server for prometheus is listening
 	MetricsHost string `envconfig:"default=0.0.0.0"`
@@ -87,14 +87,16 @@ func main() {
 	c.start()
 
 	s := newServer(c.Write, cfg.UDPBufferSize)
-	log.Infof("Starting ingrees samples server => %s:%d", cfg.UDPHost, cfg.UDPPort)
+	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize)
 	if err := s.Listen(cfg.UDPHost, cfg.UDPPort); err != nil {
 		exitOnFatal(err, "UDP server init")
 	}
 
 	http.Handle(cfg.MetricsPath, prometheus.Handler())
-
-	//prometheus.EnableCollectChecks(true)
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "ok")
+	})
+	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)
 
 	metricsListenOn := fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort)
 	log.Infof("Starting metrics server => %s", metricsListenOn)
