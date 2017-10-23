@@ -217,6 +217,7 @@ func (c *collector) process() {
 					})
 					c.countersMu.Unlock()
 					PRegistry[sampleservice].MustRegister(c.counters[vectorname])
+					
 				case "g":
 					c.gaugesMu.Lock()
 					c.gauges[vectorname] = dynamicvector.NewGauge(dynamicvector.GaugeOpts{
@@ -226,6 +227,7 @@ func (c *collector) process() {
 					})
 					c.gaugesMu.Unlock()
 					PRegistry[sampleservice].MustRegister(c.gauges[vectorname])
+
 				case "h":
 					var buckets = []float64{}
 					for _, i := range sampleHDef {
@@ -244,6 +246,7 @@ func (c *collector) process() {
 					})
 					c.histogramsMu.Unlock()
 					PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
+
 				case "hl":
 					start, _ := strconv.ParseFloat(sampleHDef[0], 10)
 					width, _ := strconv.ParseFloat(sampleHDef[1], 10)
