@@ -2,46 +2,44 @@ package main
 
 import (
 	"errors"
-	"io"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/bukalapak/prometheus-aggregator/protomodel"
+	"github.com/rolandhawk/dynamicvector"
 )
 
 const (
 	// TODO(szpakas): move to config
 	ingressQueueSize = 1024 * 100
-)
-
-var (
-	// ErrIngressQueueFull is returned when ingress queue for samples is full.
-	// Sample is not queued in such case.
-	// Optional retries should be handled on caller side.
-	ErrIngressQueueFull = errors.New("collector: ingress queue is full")
+	expirationTime = 100 * time.Second
 )
 
 type collector struct {
 	startTime time.Time
 
 	// ingress holds incoming samples for processing
-	ingressCh chan *sample
+	ingressCh chan *protomodel.Sample
 
-	// sampleParser parses samples represented in transport (text) format and converts it to samples
-	sampleParser func(r io.Reader) ([]sample, error)
-
-	counters map[string]prometheus.Counter
+	counters map[string]*dynamicvector.Counter
 	// countersMu protects scraping functions from interfering with processing
 	countersMu sync.RWMutex
 
-	gauges   map[string]prometheus.Gauge
+	gauges   map[string]*dynamicvector.Gauge
 	gaugesMu sync.RWMutex
 
-	histograms   map[string]prometheus.Histogram
+	histograms   map[string]*dynamicvector.Histogram
 	histogramsMu sync.RWMutex
 
+	//to check if the service with names and kind exist
+	mapflag map[string] bool
+	mapflagMu sync.RWMutex
+
+	pregistryMU sync.RWMutex
+ 
 	testHookProcessSampleDone func()
 
 	// quitCh is used to signal shutdown request
@@ -59,10 +57,10 @@ type collector struct {
 
 func newCollector() *collector {
 	return &collector{
-		ingressCh:                 make(chan *sample, ingressQueueSize),
-		counters:                  make(map[string]prometheus.Counter),
-		gauges:                    make(map[string]prometheus.Gauge),
-		histograms:                make(map[string]prometheus.Histogram),
+		ingressCh:                 make(chan *protomodel.Sample, ingressQueueSize),
+		counters:                  make(map[string]*dynamicvector.Counter),
+		gauges:                    make(map[string]*dynamicvector.Gauge),
+		histograms:                make(map[string]*dynamicvector.Histogram),
 		testHookProcessSampleDone: func() {},
 		quitCh:          make(chan struct{}),
 		shutdownDownCh:  make(chan struct{}),
@@ -97,6 +95,7 @@ func newCollector() *collector {
 		),
 	}
 }
+
 
 // Collect implements prometheus.Collector.
 func (c *collector) Collect(ch chan<- prometheus.Metric) {
@@ -158,21 +157,18 @@ func (c *collector) stop() error {
 
 // Write adds samples to internal queue for processing.
 // Will result in ErrIngressQueueFull error if queue is full. The sample is not added to queue in such case.
-func (c *collector) Write(s *sample) error {
+func (c *collector) Write(s *protomodel.Sample) error {
 	select {
 	case c.ingressCh <- s:
 	default:
-		return ErrIngressQueueFull
+		return errors.New("collector: ingress queue is full")
 	}
 	return nil
 }
 
-// process is responsible from converting samples to metrics and persisting in storage (in-memory)
-// Function is run in a separate goroutine. There is always single instance of this function running.
 func (c *collector) process() {
 	var (
-		s  *sample
-		h  []byte
+		s  *protomodel.Sample
 		tS time.Time
 	)
 	for {
@@ -180,98 +176,105 @@ func (c *collector) process() {
 		case s = <-c.ingressCh:
 			tS = time.Now()
 			c.metricQueueLength.Set(float64(len(c.ingressCh)))
+			sampleservice := s.Service
+			samplename := s.Name
+			samplekind := s.Kind
+			samplevalue := s.Value
+			sampleHDef := s.HistogramDef
 
-			h = s.hash()
+			samplelabel := s.GetLabel()
+			plabel:=prometheus.Labels{}
+			plabel=samplelabel
 
-			switch s.kind {
-			case sampleCounter:
-				// race avoidance is not needed on existence check as "process" is the only one modifying storage
-				m, found := c.counters[string(h)]
-				if !found {
-					m = prometheus.NewCounter(
-						prometheus.CounterOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-						},
-					)
+			//checking if service registry exist
+			c.pregistryMU.RLock()
+			_, registryexist := PRegistry[sampleservice]
+			c.pregistryMU.RUnlock()
+
+			if !registryexist{
+				c.pregistryMU.Lock()
+				PRegistry[sampleservice] = prometheus.NewRegistry()
+				c.pregistryMU.Unlock()
+			}
+
+			//checking if metric vector exist
+			flagname := sampleservice+":"+samplekind+":"+samplename
+			vectorname := sampleservice+":"+samplename
+			c.mapflagMu.RLock()
+			_, vectorexist := c.mapflag[flagname]
+			c.mapflagMu.RUnlock()
+			if !vectorexist{
+				c.mapflagMu.Lock()
+				c.mapflag[flagname]=true
+				c.mapflagMu.Unlock()
+				switch samplekind {
+				case "c":
 					c.countersMu.Lock()
-					c.counters[string(h)] = m
+					c.counters[vectorname] = dynamicvector.NewCounter(dynamicvector.CounterOpts{
+						Name: samplename,
+						Help: "auto",
+						Expire: expirationTime,
+					})
 					c.countersMu.Unlock()
-				}
-
-				m.Add(s.value)
-
-			case sampleGauge:
-				m, found := c.gauges[string(h)]
-				if !found {
-					m = prometheus.NewGauge(
-						prometheus.GaugeOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-						},
-					)
+					PRegistry[sampleservice].MustRegister(c.counters[vectorname])
+				case "g":
 					c.gaugesMu.Lock()
-					c.gauges[string(h)] = m
+					c.gauges[vectorname] = dynamicvector.NewGauge(dynamicvector.GaugeOpts{
+						Name: samplename,
+						Help: "auto",
+						Expire: expirationTime,
+					})
 					c.gaugesMu.Unlock()
-				}
-
-				m.Set(s.value)
-
-			case sampleHistogramLinear:
-				m, found := c.histograms[string(h)]
-				if !found {
-					start, _ := strconv.ParseFloat(s.histogramDef[0], 10)
-					width, _ := strconv.ParseFloat(s.histogramDef[1], 10)
-					count, _ := strconv.Atoi(s.histogramDef[2])
-					m = prometheus.NewHistogram(
-						prometheus.HistogramOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-							Buckets:     prometheus.LinearBuckets(start, width, count),
-						},
-					)
-					c.histogramsMu.Lock()
-					c.histograms[string(h)] = m
-					c.histogramsMu.Unlock()
-				}
-
-				m.Observe(s.value)
-
-			case sampleHistogram:
-				m, found := c.histograms[string(h)]
-				if !found {
+					PRegistry[sampleservice].MustRegister(c.gauges[vectorname])
+				case "h":
 					var buckets = []float64{}
-					for _, i := range s.histogramDef {
+					for _, i := range sampleHDef {
 						j, err := strconv.ParseFloat(i, 64)
 						if err != nil {
 							panic(err)
 						}
 						buckets = append(buckets, j)
 					}
-
-					m = prometheus.NewHistogram(
-						prometheus.HistogramOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-							Buckets:     buckets,
-						},
-					)
 					c.histogramsMu.Lock()
-					c.histograms[string(h)] = m
+					c.histograms[vectorname] = dynamicvector.NewHistogram(dynamicvector.HistogramOpts{
+						Name: samplename,
+						Help: "auto",
+						Buckets:     buckets,
+						Expire: expirationTime,
+					})
 					c.histogramsMu.Unlock()
-				}
-
-				m.Observe(s.value)
+					PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
+				case "hl":
+					start, _ := strconv.ParseFloat(sampleHDef[0], 10)
+					width, _ := strconv.ParseFloat(sampleHDef[1], 10)
+					count, _ := strconv.Atoi(sampleHDef[2])
+					c.histogramsMu.Lock()
+					c.histograms[vectorname] = dynamicvector.NewHistogram(dynamicvector.HistogramOpts{
+						Name: samplename,
+						Help: "auto",
+						Buckets:     prometheus.LinearBuckets(start, width, count),
+						Expire: expirationTime,
+					})
+					c.histogramsMu.Unlock()
+					PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
+				}		
 			}
+
+			switch samplekind {
+			case "c":
+				c.counters[vectorname].With(plabel).Add(samplevalue)
+			case "g":
+				c.gauges[vectorname].With(plabel).Set(samplevalue)
+			case "h":
+				c.histograms[vectorname].With(plabel).Observe(samplevalue)
+			}
+
 
 			c.testHookProcessSampleDone()
 
-			c.metricProcessingDuration.WithLabelValues(string(s.kind)).
+			c.metricProcessingDuration.WithLabelValues(string(samplekind)).
 				Observe(float64(time.Since(tS).Nanoseconds()))
+
 
 		case <-c.quitCh:
 			close(c.shutdownDownCh)

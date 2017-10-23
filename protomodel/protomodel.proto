@@ -1,0 +1,11 @@
+syntax = "proto3";
+package protomodel;
+
+message Sample {
+  string service = 1;
+  string name = 2;
+  string kind = 3;
+  map<string, string> label = 4;
+  double value = 5;
+  repeated string histogramDef = 6; 
+}

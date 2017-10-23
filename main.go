@@ -7,28 +7,29 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/pkg/errors"
+	//"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/log"
 	"github.com/vrischmann/envconfig"
+	
 )
 
-const (
-	// ConfigAppPrefix prefixes all ENV values used to config the program.
-	ConfigAppPrefix = "APP"
+var (
+	PRegistry = make(map[string]*prometheus.Registry)
 )
 
 type config struct {
-	// UdpHost is address on which UDP server is listening
-	UDPHost string `envconfig:"default=0.0.0.0"`
+	// TCPHost is address on which TCP server is listening
+	TCPHost string `envconfig:"default=0.0.0.0"`
 
-	// UdpPort is port number on which UDP server is listening
-	UDPPort int `envconfig:"default=8080"`
+	// TCPPort is port number on which TCP server is listening
+	TCPPort string `envconfig:"default=8080"`
 
-	// UDPBufferSize is a size of a buffer in bytes used for incoming samples.
+	// TCPBufferSize is a size of a buffer in bytes used for incoming samples.
 	// Sample not fitting in buffer will be partially discarded.
 	// Sync buffer size with client.
-	UDPBufferSize int `envconfig:"default=65536"`
+	TCPBufferSize int `envconfig:"default=65536"`
 
 	// MetricsHost is address on which metric server for prometheus is listening
 	MetricsHost string `envconfig:"default=0.0.0.0"`
@@ -43,12 +44,6 @@ type config struct {
 	// MaxProcs limits number of processors used by the app.
 	MaxProcs int `envconfig:"default=0"`
 
-	// SampleHasher sets hashing function used with samples.
-	// Valid values:
-	// - prom: hasher based on prometheus implementation of FNV-1a hash
-	// - md5: naive MD5 implementation
-	SampleHasher string `envconfig:"default=prom"`
-
 	// Metrics path for prometheus scrape
 	MetricsPath string `envconfig:"default=/metrics"`
 }
@@ -56,7 +51,7 @@ type config struct {
 func main() {
 	// -> config from env
 	cfg := &config{}
-	if err := envconfig.InitWithPrefix(&cfg, ConfigAppPrefix); err != nil {
+	if err := envconfig.InitWithPrefix(&cfg, "APP"); err != nil {
 		exitOnFatal(err, "init config")
 	}
 
@@ -71,33 +66,25 @@ func main() {
 		log.Debugf("Processor limiting, Req: %d, MaxAvailable: %d, NumCPU: %d", cfg.MaxProcs, nGot, runtime.NumCPU())
 	}
 
-	switch cfg.SampleHasher {
-	case "prom":
-		sampleHasher = hashProm
-	case "md5":
-		sampleHasher = hashMD5
-	default:
-		exitOnFatal(errors.New("unknown hashing implementation"), "sampleHasher selection")
-	}
-	log.Debugf("Sample hasher used: %s", cfg.SampleHasher)
-
-	// TODO(szpakas): attach to signals for graceful shutdown and call c.stop()
 	c := newCollector()
 	prometheus.MustRegister(c)
 	c.start()
 
-	s := newServer(c.Write, cfg.UDPBufferSize)
-	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize)
-	if err := s.Listen(cfg.UDPHost, cfg.UDPPort); err != nil {
-		exitOnFatal(err, "UDP server init")
+	s := newServer(c.Write, cfg.TCPBufferSize)
+	log.Infof("Starting ingress samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)
+	if err := s.Listen(cfg.TCPHost, cfg.TCPPort); err != nil {
+		exitOnFatal(err, "TCP server init")
 	}
 
+
+	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)
+
 	http.Handle(cfg.MetricsPath, prometheus.Handler())
+	http.Handle("/", EndPoint())
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "ok")
 	})
-	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)
-
+	
 	metricsListenOn := fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort)
 	log.Infof("Starting metrics server => %s", metricsListenOn)
 	if err := http.ListenAndServe(metricsListenOn, nil); err != nil {
@@ -109,3 +96,19 @@ func exitOnFatal(err error, loc string) {
 	log.Fatalf("EXIT on %s: err=%s\n", loc, err)
 	syscall.Exit(1)
 }
+
+func EndPoint() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, ok := PRegistry[r.URL.Path]
+
+		if ok {
+			h := promhttp.HandlerFor(PRegistry[r.URL.Path], promhttp.HandlerOpts{})
+			h.ServeHTTP(w, r)
+		} else {
+			fmt.Fprint(w, "End Point not exist")
+			return
+		}
+	})
+}
+
+
