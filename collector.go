@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	//"io"
 	"runtime"
 	"strconv"
 	"sync"
@@ -140,7 +139,7 @@ func (c *collector) start() {
 
 	c.metricAppStart.Set(float64(c.startTime.UnixNano()) / 1e9)
 
-	//go c.process()
+	go c.process()
 }
 
 func (c *collector) stop() error {
@@ -170,7 +169,6 @@ func (c *collector) Write(s *protomodel.Sample) error {
 func (c *collector) process() {
 	var (
 		s  *protomodel.Sample
-		//h  []byte
 		tS time.Time
 	)
 	for {
