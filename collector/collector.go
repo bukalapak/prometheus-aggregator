@@ -1,4 +1,4 @@
-package main
+package collector
 
 import (
 	"errors"
@@ -7,25 +7,29 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bukalapak/prometheus-aggregator"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/bukalapak/prometheus-aggregator/protomodel"
 	"github.com/rolandhawk/dynamicvector"
 )
 
 const (
 	// TODO(szpakas): move to config
 	ingressQueueSize = 1024 * 100
-	expirationTime = 100 * time.Second
+	expirationTime   = 100 * time.Second
 )
 
-type collector struct {
-	startTime time.Time
+type Collector struct {
+	startTime      time.Time
+	queueCh        chan *protor.Sample
+	expirationTime time.Duration
 
-	// ingress holds incoming samples for processing
-	ingressCh chan *protomodel.Sample
+	PRegistry   map[string]*prometheus.Registry
+	PRegistryMu sync.RWMutex
 
-	counters map[string]*dynamicvector.Counter
-	// countersMu protects scraping functions from interfering with processing
+	mapFlag   map[string]bool
+	mapFlagMu sync.RWMutex
+
+	counters   map[string]*dynamicvector.Counter
 	countersMu sync.RWMutex
 
 	gauges   map[string]*dynamicvector.Gauge
@@ -34,18 +38,10 @@ type collector struct {
 	histograms   map[string]*dynamicvector.Histogram
 	histogramsMu sync.RWMutex
 
-	//to check if the service with names and kind exist
-	mapflag map[string] bool
-	mapflagMu sync.RWMutex
-
-	pregistryMU sync.RWMutex
- 
-	testHookProcessSampleDone func()
-
-	// quitCh is used to signal shutdown request
 	quitCh chan struct{}
 
-	// shutdownDownCh is used to signal when shutdown is done
+	testHookProcessSampleDone func()
+
 	shutdownDownCh  chan struct{}
 	shutdownTimeout time.Duration
 
@@ -53,19 +49,24 @@ type collector struct {
 	metricAppDuration        prometheus.Gauge
 	metricQueueLength        prometheus.Gauge
 	metricProcessingDuration *prometheus.SummaryVec
+
+	Metricz *prometheus.Registry
 }
 
-func newCollector() *collector {
-	return &collector{
-		ingressCh:                 make(chan *protomodel.Sample, ingressQueueSize),
+func NewCollector() *Collector {
+	c := Collector{
+		queueCh:                   make(chan *protor.Sample, ingressQueueSize),
+		PRegistry:                 make(map[string]*prometheus.Registry),
+		mapFlag:                   make(map[string]bool),
 		counters:                  make(map[string]*dynamicvector.Counter),
 		gauges:                    make(map[string]*dynamicvector.Gauge),
 		histograms:                make(map[string]*dynamicvector.Histogram),
+		quitCh:                    make(chan struct{}),
+		shutdownDownCh:            make(chan struct{}),
+		shutdownTimeout:           time.Second,
 		testHookProcessSampleDone: func() {},
-		quitCh:          make(chan struct{}),
-		shutdownDownCh:  make(chan struct{}),
-		shutdownTimeout: time.Second,
-
+		expirationTime:            expirationTime,
+		Metricz:                   prometheus.NewRegistry(),
 		metricAppStart: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "app_start_timestamp_seconds",
@@ -94,11 +95,15 @@ func newCollector() *collector {
 			[]string{"sampleKind"},
 		),
 	}
+	c.Metricz.MustRegister(c.metricAppDuration)
+	c.Metricz.MustRegister(c.metricAppStart)
+	c.Metricz.MustRegister(c.metricQueueLength)
+	c.Metricz.MustRegister(c.metricProcessingDuration)
+	return &c
 }
 
-
 // Collect implements prometheus.Collector.
-func (c *collector) Collect(ch chan<- prometheus.Metric) {
+func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	c.metricAppStart.Collect(ch)
 
 	c.metricAppDuration.Set(time.Now().Sub(c.startTime).Seconds())
@@ -127,22 +132,24 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // Describe implements prometheus.Collector.
-func (c *collector) Describe(ch chan<- *prometheus.Desc) {
+func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	c.metricAppStart.Describe(ch)
 	c.metricAppDuration.Describe(ch)
 	c.metricQueueLength.Describe(ch)
 	c.metricProcessingDuration.Describe(ch)
 }
 
-func (c *collector) start() {
+func (c *Collector) Start() error {
 	c.startTime = time.Now()
 
 	c.metricAppStart.Set(float64(c.startTime.UnixNano()) / 1e9)
 
 	go c.process()
+	return nil
+
 }
 
-func (c *collector) stop() error {
+func (c *Collector) Stop() error {
 	close(c.quitCh)
 	runtime.Gosched()
 
@@ -155,78 +162,95 @@ func (c *collector) stop() error {
 	return nil
 }
 
+func (c *Collector) IsRegistryExist(s string) (*prometheus.Registry, error) {
+	c.PRegistryMu.RLock()
+	_, ok := c.PRegistry[s]
+	c.PRegistryMu.RUnlock()
+	if ok {
+		return c.PRegistry[s], nil
+	}
+	if s == "metricz" {
+		return c.Metricz, nil
+	}
+
+	return nil, errors.New("registry not exist")
+}
+
 // Write adds samples to internal queue for processing.
 // Will result in ErrIngressQueueFull error if queue is full. The sample is not added to queue in such case.
-func (c *collector) Write(s *protomodel.Sample) error {
+func (c *Collector) Write(s *protor.Sample) error {
 	select {
-	case c.ingressCh <- s:
+	case c.queueCh <- s:
 	default:
 		return errors.New("collector: ingress queue is full")
 	}
 	return nil
 }
 
-func (c *collector) process() {
+func (c *Collector) process() {
 	var (
-		s  *protomodel.Sample
+		s  *protor.Sample
 		tS time.Time
 	)
 	for {
 		select {
-		case s = <-c.ingressCh:
+		case s = <-c.queueCh:
 			tS = time.Now()
-			c.metricQueueLength.Set(float64(len(c.ingressCh)))
+			c.metricQueueLength.Set(float64(len(c.queueCh)))
 			sampleservice := s.Service
 			samplename := s.Name
 			samplekind := s.Kind
 			samplevalue := s.Value
 			sampleHDef := s.HistogramDef
+			samplelabel := s.Label
 
-			samplelabel := s.GetLabel()
-			plabel:=prometheus.Labels{}
-			plabel=samplelabel
+			plabel := prometheus.Labels{}
+			plabel = samplelabel
 
 			//checking if service registry exist
-			c.pregistryMU.RLock()
-			_, registryexist := PRegistry[sampleservice]
-			c.pregistryMU.RUnlock()
+			_, registryexist := c.IsRegistryExist(sampleservice)
 
-			if !registryexist{
-				c.pregistryMU.Lock()
-				PRegistry[sampleservice] = prometheus.NewRegistry()
-				c.pregistryMU.Unlock()
+			if registryexist != nil {
+				c.PRegistryMu.Lock()
+				c.PRegistry[sampleservice] = prometheus.NewRegistry()
+				c.PRegistryMu.Unlock()
 			}
 
+			flagname := sampleservice + ":" + samplekind + ":" + samplename
+			vectorname := sampleservice + ":" + samplename
+
 			//checking if metric vector exist
-			flagname := sampleservice+":"+samplekind+":"+samplename
-			vectorname := sampleservice+":"+samplename
-			c.mapflagMu.RLock()
-			_, vectorexist := c.mapflag[flagname]
-			c.mapflagMu.RUnlock()
-			if !vectorexist{
-				c.mapflagMu.Lock()
-				c.mapflag[flagname]=true
-				c.mapflagMu.Unlock()
+			c.mapFlagMu.RLock()
+			_, vectorexist := c.mapFlag[flagname]
+			c.mapFlagMu.RUnlock()
+
+			if !vectorexist {
+
+				c.mapFlagMu.Lock()
+				c.mapFlag[flagname] = true
+				c.mapFlagMu.Unlock()
+
 				switch samplekind {
+
 				case "c":
 					c.countersMu.Lock()
 					c.counters[vectorname] = dynamicvector.NewCounter(dynamicvector.CounterOpts{
-						Name: samplename,
-						Help: "auto",
+						Name:   samplename,
+						Help:   "auto",
 						Expire: expirationTime,
 					})
 					c.countersMu.Unlock()
-					PRegistry[sampleservice].MustRegister(c.counters[vectorname])
-					
+					c.PRegistry[sampleservice].MustRegister(c.counters[vectorname])
+
 				case "g":
 					c.gaugesMu.Lock()
 					c.gauges[vectorname] = dynamicvector.NewGauge(dynamicvector.GaugeOpts{
-						Name: samplename,
-						Help: "auto",
+						Name:   samplename,
+						Help:   "auto",
 						Expire: expirationTime,
 					})
 					c.gaugesMu.Unlock()
-					PRegistry[sampleservice].MustRegister(c.gauges[vectorname])
+					c.PRegistry[sampleservice].MustRegister(c.gauges[vectorname])
 
 				case "h":
 					var buckets = []float64{}
@@ -239,13 +263,13 @@ func (c *collector) process() {
 					}
 					c.histogramsMu.Lock()
 					c.histograms[vectorname] = dynamicvector.NewHistogram(dynamicvector.HistogramOpts{
-						Name: samplename,
-						Help: "auto",
-						Buckets:     buckets,
-						Expire: expirationTime,
+						Name:    samplename,
+						Help:    "auto",
+						Buckets: buckets,
+						Expire:  expirationTime,
 					})
 					c.histogramsMu.Unlock()
-					PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
+					c.PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
 
 				case "hl":
 					start, _ := strconv.ParseFloat(sampleHDef[0], 10)
@@ -253,31 +277,35 @@ func (c *collector) process() {
 					count, _ := strconv.Atoi(sampleHDef[2])
 					c.histogramsMu.Lock()
 					c.histograms[vectorname] = dynamicvector.NewHistogram(dynamicvector.HistogramOpts{
-						Name: samplename,
-						Help: "auto",
-						Buckets:     prometheus.LinearBuckets(start, width, count),
-						Expire: expirationTime,
+						Name:    samplename,
+						Help:    "auto",
+						Buckets: prometheus.LinearBuckets(start, width, count),
+						Expire:  expirationTime,
 					})
 					c.histogramsMu.Unlock()
-					PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
-				}		
+					c.PRegistry[sampleservice].MustRegister(c.histograms[vectorname])
+				}
 			}
 
 			switch samplekind {
+
 			case "c":
 				c.counters[vectorname].With(plabel).Add(samplevalue)
+
 			case "g":
 				c.gauges[vectorname].With(plabel).Set(samplevalue)
+
 			case "h":
 				c.histograms[vectorname].With(plabel).Observe(samplevalue)
-			}
 
+			case "hl":
+				c.histograms[vectorname].With(plabel).Observe(samplevalue)
+
+			}
 
 			c.testHookProcessSampleDone()
 
-			c.metricProcessingDuration.WithLabelValues(string(samplekind)).
-				Observe(float64(time.Since(tS).Nanoseconds()))
-
+			c.metricProcessingDuration.WithLabelValues(string(samplekind)).Observe(float64(time.Since(tS).Nanoseconds()))
 
 		case <-c.quitCh:
 			close(c.shutdownDownCh)

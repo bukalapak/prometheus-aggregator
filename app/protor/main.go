@@ -8,14 +8,13 @@ import (
 	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/log"
 	"github.com/vrischmann/envconfig"
-	
-)
 
-var (
-	PRegistry = make(map[string]*prometheus.Registry)
+	pr "github.com/bukalapak/prometheus-aggregator"
+	co "github.com/bukalapak/prometheus-aggregator/collector"
+	"github.com/bukalapak/prometheus-aggregator/handler"
+	"github.com/bukalapak/prometheus-aggregator/server"
 )
 
 type config struct {
@@ -45,6 +44,12 @@ type config struct {
 
 	// Metrics path for prometheus scrape
 	MetricsPath string `envconfig:"default=/metrics"`
+
+	// Vector expiration time
+	ExpirationTime int `envconfig:"default=100"`
+
+	//size of channel
+	IngressQueueSize int `envconfig:"default=102400"`
 }
 
 func main() {
@@ -65,27 +70,23 @@ func main() {
 		log.Debugf("Processor limiting, Req: %d, MaxAvailable: %d, NumCPU: %d", cfg.MaxProcs, nGot, runtime.NumCPU())
 	}
 
-	c := newCollector()
-	prometheus.MustRegister(c)
-	c.start()
+	collector := co.NewCollector()
+	collector.Metricz.MustRegister(collector)
+	prometheus.MustRegister(collector)
+	//collector := co.NewCollector(ExpirationTime, IngressQueueSize)
+	pProtor := pr.NewProtor(collector)
+	pHandler := handler.NewHandler(pProtor)
+	pServer := server.NewServer(pProtor)
 
-	s := newServer(c.Write, cfg.TCPBufferSize)
+	collector.Start()
 	log.Infof("Starting ingress samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)
-	if err := s.Listen(cfg.TCPHost, cfg.TCPPort); err != nil {
-		exitOnFatal(err, "TCP server init")
-	}
-
+	go pServer.Run(cfg.TCPHost, cfg.TCPPort)
 
 	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)
-
-	http.Handle(cfg.MetricsPath, prometheus.Handler())
-	http.Handle("/", EndPoint())
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "ok")
-	})
-	
 	metricsListenOn := fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort)
 	log.Infof("Starting metrics server => %s", metricsListenOn)
+	http.HandleFunc("/healthz", pHandler.Healthz)
+	http.Handle("/", pHandler.EndPoint())
 	if err := http.ListenAndServe(metricsListenOn, nil); err != nil {
 		exitOnFatal(err, "metric server")
 	}
@@ -95,19 +96,3 @@ func exitOnFatal(err error, loc string) {
 	log.Fatalf("EXIT on %s: err=%s\n", loc, err)
 	syscall.Exit(1)
 }
-
-func EndPoint() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, ok := PRegistry[r.URL.Path]
-
-		if ok {
-			h := promhttp.HandlerFor(PRegistry[r.URL.Path], promhttp.HandlerOpts{})
-			h.ServeHTTP(w, r)
-		} else {
-			fmt.Fprint(w, "End Point not exist")
-			return
-		}
-	})
-}
-
-
