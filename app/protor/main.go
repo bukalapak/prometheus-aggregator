@@ -7,13 +7,13 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 	"github.com/vrischmann/envconfig"
 
-	pr "github.com/bukalapak/prometheus-aggregator"
-	co "github.com/bukalapak/prometheus-aggregator/collector"
+	"github.com/bukalapak/prometheus-aggregator"
+	"github.com/bukalapak/prometheus-aggregator/collector"
 	"github.com/bukalapak/prometheus-aggregator/handler"
+	rm "github.com/bukalapak/prometheus-aggregator/registrymanager"
 	"github.com/bukalapak/prometheus-aggregator/server"
 )
 
@@ -44,12 +44,6 @@ type config struct {
 
 	// Metrics path for prometheus scrape
 	MetricsPath string `envconfig:"default=/metrics"`
-
-	// Vector expiration time
-	ExpirationTime int `envconfig:"default=100"`
-
-	//size of channel
-	IngressQueueSize int `envconfig:"default=102400"`
 }
 
 func main() {
@@ -70,16 +64,13 @@ func main() {
 		log.Debugf("Processor limiting, Req: %d, MaxAvailable: %d, NumCPU: %d", cfg.MaxProcs, nGot, runtime.NumCPU())
 	}
 
-	collector := co.NewCollector()
-	collector.Metricz.MustRegister(collector)
-	prometheus.MustRegister(collector)
-	//collector := co.NewCollector(ExpirationTime, IngressQueueSize)
-	pProtor := pr.NewProtor(collector)
-	pHandler := handler.NewHandler(pProtor)
-	pServer := server.NewServer(pProtor)
+	pCollector := collector.New()
+	pRegistryManager := rm.New()
+	pProtor := protor.New(pCollector, pRegistryManager)
+	pHandler := handler.New(pProtor)
+	pServer := server.New(pProtor)
 
-	collector.Start()
-	log.Infof("Starting ingress samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)
+	log.Infof("Starting samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)
 	go pServer.Run(cfg.TCPHost, cfg.TCPPort)
 
 	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)

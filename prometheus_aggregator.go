@@ -5,7 +5,8 @@ import (
 )
 
 type Protor struct {
-	collector Collector
+	Collector       CollectorInterface
+	RegistryManager RegistryManagerInterface
 }
 
 type Sample struct {
@@ -17,25 +18,26 @@ type Sample struct {
 	HistogramDef []string          `protobuf:"bytes,6,rep,name=histogramDef" json:"histogramDef,omitempty"`
 }
 
-type Collector interface {
-	Write(*Sample) error
-	IsRegistryExist(string) (*prometheus.Registry, error)
+type CollectorInterface interface {
+	Write(*Sample, *prometheus.Registry) error
 }
 
-func NewProtor(c Collector) *Protor {
+type RegistryManagerInterface interface {
+	FindRegistry(string) (*prometheus.Registry, error)
+	MakeRegistry(string) *prometheus.Registry
+}
+
+func New(c CollectorInterface, rm RegistryManagerInterface) *Protor {
 	return &Protor{
-		collector: c,
+		Collector:       c,
+		RegistryManager: rm,
 	}
 }
 
-func (p *Protor) WriteToCollector(s *Sample) error {
-	err := p.collector.Write(s)
+func (p *Protor) WriteToRegistry(s *Sample) error {
+	registry, err := p.RegistryManager.FindRegistry(s.Name)
 	if err != nil {
-		return err
+		registry = p.RegistryManager.MakeRegistry(s.Name)
 	}
-	return nil
-}
-
-func (p *Protor) AskForRegistry(s string) (*prometheus.Registry, error) {
-	return p.collector.IsRegistryExist(s)
+	return p.Collector.Write(s, registry)
 }
