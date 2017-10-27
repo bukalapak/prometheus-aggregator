@@ -29,16 +29,16 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: 9090
           initialDelaySeconds: 30
           timeoutSeconds: 1
         readinessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: 9090
           timeoutSeconds: 1
         ports:
-        - containerPort: 8080
+        - containerPort: 9090
         command:
           - /envconsul
           - -consul=127.0.0.1:8500
@@ -54,7 +54,7 @@ spec:
         - name: SERVICE_ENVIRONMENT
           value: {{.CurrentEnvironment}}
         - name: SERVICE_PORT
-          value: "8080"
+          value: "9090"
         - name: CONSUL1
           valueFrom:
             configMapKeyRef:
