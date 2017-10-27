@@ -1,8 +1,9 @@
-package registry_manager
+package registrymanager
 
 import (
 	"errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/log"
 )
 
 type RegistryManager struct {
@@ -24,6 +25,7 @@ func (rm *RegistryManager) FindRegistry(s string) (*prometheus.Registry, error) 
 }
 
 func (rm *RegistryManager) MakeRegistry(s string) *prometheus.Registry {
+	log.Info("make a new endpoint at /", s)
 	rm.RegistryList[s] = prometheus.NewRegistry()
 	return rm.RegistryList[s]
 }

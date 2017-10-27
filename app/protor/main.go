@@ -13,7 +13,7 @@ import (
 	"github.com/bukalapak/prometheus-aggregator"
 	"github.com/bukalapak/prometheus-aggregator/collector"
 	"github.com/bukalapak/prometheus-aggregator/handler"
-	rm "github.com/bukalapak/prometheus-aggregator/registrymanager"
+	"github.com/bukalapak/prometheus-aggregator/registrymanager"
 	"github.com/bukalapak/prometheus-aggregator/server"
 )
 
@@ -65,9 +65,9 @@ func main() {
 	}
 
 	pCollector := collector.New()
-	pRegistryManager := rm.New()
+	pRegistryManager := registrymanager.New()
 	pProtor := protor.New(pCollector, pRegistryManager)
-	pHandler := handler.New(pProtor)
+	pHandler := handler.New(pRegistryManager)
 	pServer := server.New(pProtor)
 
 	log.Infof("Starting samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)

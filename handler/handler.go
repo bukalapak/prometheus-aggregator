@@ -8,15 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//pake protor bukan registrymanager karena bakal beda map nya
-//karena ga bisa kasih pointer ke interface :(
 type Handler struct {
-	Protor *pr.Protor
+	RegistryManager pr.RegistryManagerInterface
 }
 
-func New(protor *pr.Protor) *Handler {
+func New(rm pr.RegistryManagerInterface) *Handler {
 	return &Handler{
-		Protor: protor,
+		RegistryManager: rm,
 	}
 }
 
@@ -31,7 +29,7 @@ func (h *Handler) EndPoint() http.Handler {
 		if str == "favicon.ico" {
 			return
 		}
-		PRegistry, err := h.Protor.RegistryManager.FindRegistry(str)
+		PRegistry, err := h.RegistryManager.FindRegistry(str)
 		if err != nil {
 			fmt.Fprint(w, "End Point not exist")
 			return

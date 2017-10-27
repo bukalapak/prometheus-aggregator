@@ -35,9 +35,9 @@ func New(c CollectorInterface, rm RegistryManagerInterface) *Protor {
 }
 
 func (p *Protor) WriteToRegistry(s *Sample) error {
-	registry, err := p.RegistryManager.FindRegistry(s.Name)
+	registry, err := p.RegistryManager.FindRegistry(s.Service)
 	if err != nil {
-		registry = p.RegistryManager.MakeRegistry(s.Name)
+		registry = p.RegistryManager.MakeRegistry(s.Service)
 	}
 	return p.Collector.Write(s, registry)
 }

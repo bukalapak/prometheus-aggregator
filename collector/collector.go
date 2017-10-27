@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"errors"
 	"strconv"
 	"sync"
 	"time"
@@ -54,6 +55,7 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 				Help:   "auto",
 				Expire: ExpirationTime,
 			})
+			Registry.MustRegister(c.counters[s.Name])
 			c.countersMu.Unlock()
 
 		case "g":
@@ -64,6 +66,7 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 				Help:   "auto",
 				Expire: ExpirationTime,
 			})
+			Registry.MustRegister(c.gauges[s.Name])
 			c.gaugesMu.Unlock()
 
 		case "h":
@@ -84,10 +87,13 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 				Buckets: buckets,
 				Expire:  ExpirationTime,
 			})
+			Registry.MustRegister(c.histograms[s.Name])
 			c.histogramsMu.Unlock()
 
 		case "hl":
-
+			if len(s.HistogramDef) < 3 {
+				return errors.New("not enough parameter")
+			}
 			start, err := strconv.ParseFloat(s.HistogramDef[0], 10)
 			if err != nil {
 				return err
@@ -107,6 +113,8 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 				Buckets: prometheus.LinearBuckets(start, width, count),
 				Expire:  ExpirationTime,
 			})
+			Registry.MustRegister(c.histograms[s.Name])
+			c.histogramsMu.Unlock()
 
 		}
 	} else {
@@ -124,6 +132,5 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 	case "hl":
 		c.histograms[s.Name].With(plabel).Observe(s.Value)
 	}
-
 	return nil
 }

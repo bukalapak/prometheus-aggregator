@@ -1,0 +1,166 @@
+stages:
+  - test
+  - pre-build
+  - build
+  - deployment
+
+test:
+  stage: test
+  image: registry.bukalapak.io/sre/gudang/pre-build/golang:0.0.4
+  before_script:
+    - mkdir -p $GOPATH/src/github.com/bukalapak
+    - ln -s $CI_PROJECT_DIR $GOPATH/src/github.com/bukalapak
+    - cd $GOPATH/src/github.com/bukalapak/$CI_PROJECT_NAME
+    - make dep
+  script:
+    - make test
+
+compile:
+  stage: pre-build
+  image: registry.bukalapak.io/sre/gudang/pre-build/golang:0.0.4
+  before_script:
+    - mkdir -p $GOPATH/src/github.com/bukalapak
+    - ln -s $CI_PROJECT_DIR $GOPATH/src/github.com/bukalapak
+    - cd $GOPATH/src/github.com/bukalapak/$CI_PROJECT_NAME
+    - make dep
+  script:
+    - make compile
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - deploy/_output
+  only:
+    - /^release-.*$/
+    - /^deploy-.*$/
+
+consul:
+  stage: pre-build
+  image: registry.bukalapak.io/sre/gudang/build/docker:0.0.1
+  script:
+    - make consul
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - deploy/_output
+  only:
+    - /^release-.*$/
+    - /^deploy-.*$/
+
+build-docker:
+  stage: build
+  image: registry.bukalapak.io/sre/gudang/build/docker:0.0.1
+  variables:
+    DOCKER_API_VERSION: "1.23"
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+  script:
+    - make build
+  tags:
+    - build-image-shared
+  only:
+    - /^release-.*$/
+    - /^deploy-.*$/
+
+build-release-deployment:
+  stage: build
+  image: registry.bukalapak.io/sre/gudang/build/kubelize:0.0.2
+  script:
+    - make deployment
+  only:
+    - /^release-.*$/
+  dependencies: []
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - deploy/_output
+
+build-deployment:
+  stage: build
+  image: registry.bukalapak.io/sre/gudang/build/kubelize:0.0.2
+  script:
+    - export ENV=$(echo $CI_COMMIT_REF_NAME | tr '-' ' ' | awk '{print $2}')
+    - make deployment
+  only:
+    - /^deploy-.*$/
+  dependencies: []
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - deploy/_output
+
+deploy-release:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  script:
+    - kubectl config use-context production-cluster
+    - make production
+    - kubectl config use-context staging-cluster
+    - make sandbox
+  when: manual
+  only:
+    - /^release-.*$/
+
+init-deployment:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  variables:
+    ACTION: create
+  script:
+    - kubectl config use-context production-cluster
+    - make production
+    - kubectl config use-context staging-cluster
+    - make sandbox
+  when: manual
+  only:
+    - /^release-.*$/
+
+init-service:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  variables:
+    ACTION: create
+    FILE: service
+  script:
+    - kubectl config use-context production-cluster
+    - make production
+    - kubectl config use-context staging-cluster
+    - make sandbox
+  when: manual
+  only:
+    - /^release-.*$/
+
+deploy-canary:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  variables:
+    ACTION: apply
+  script:
+    - kubectl config use-context production-cluster
+    - make canary
+  when: manual
+  only:
+    - /^release-.*$/
+
+deploy-beta:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  variables:
+    ACTION: apply
+  script:
+    - export ENV=$(echo $CI_COMMIT_REF_NAME | tr '-' ' ' | awk '{print $2}')
+    - kubectl config use-context production-cluster
+    - make $ENV
+  only:
+    - /^deploy-beta*$/
+
+deploy-staging:
+  stage: deployment
+  image: registry.bukalapak.io/sre/gudang/deployment:0.0.3.1
+  variables:
+    ACTION: apply
+  script:
+    - export ENV=$(echo $CI_COMMIT_REF_NAME | tr '-' ' ' | awk '{print $2}')
+    - kubectl config use-context staging-cluster
+    - make $ENV
+  only:
+    - /^deploy-staging*$/
