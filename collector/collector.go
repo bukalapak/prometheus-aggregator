@@ -2,7 +2,6 @@ package collector
 
 import (
 	"errors"
-	"strconv"
 	"sync"
 	"time"
 
@@ -73,11 +72,7 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 
 			var buckets = []float64{}
 			for _, i := range s.HistogramDef {
-				j, err := strconv.ParseFloat(i, 64)
-				if err != nil {
-					return err
-				}
-				buckets = append(buckets, j)
+				buckets = append(buckets, i)
 			}
 
 			c.histogramsMu.Lock()
@@ -94,18 +89,9 @@ func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error
 			if len(s.HistogramDef) < 3 {
 				return errors.New("not enough parameter")
 			}
-			start, err := strconv.ParseFloat(s.HistogramDef[0], 10)
-			if err != nil {
-				return err
-			}
-			width, err := strconv.ParseFloat(s.HistogramDef[1], 10)
-			if err != nil {
-				return err
-			}
-			count, err := strconv.Atoi(s.HistogramDef[2])
-			if err != nil {
-				return err
-			}
+			start := s.HistogramDef[0]
+			width := s.HistogramDef[1]
+			count := int(s.HistogramDef[2])
 			c.histogramsMu.Lock()
 			c.histograms[s.Name] = dynamicvector.NewHistogram(dynamicvector.HistogramOpts{
 				Name:    s.Name,

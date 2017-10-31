@@ -34,13 +34,13 @@ func (s *ServerSuite) SetupSuite() {
 
 func (ss *ServerSuite) TestProtoToSample() {
 
-	protoSample := &pm.Sample{
+	protoSample := &pm.Array_Sample{
 		Service:      "Test",
 		Name:         "test_counter",
 		Kind:         "c",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	sampleTemp := &pr.Sample{
 		Service:      "Test",
@@ -48,23 +48,28 @@ func (ss *ServerSuite) TestProtoToSample() {
 		Kind:         "c",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	sampleProtor := server.ProtoToSample(protoSample)
 	assert.Equal(ss.T(), sampleProtor, sampleTemp, "")
 }
 
 func (ss *ServerSuite) TestHandleRequest() {
-	protoSample := &pm.Sample{
+	var protoSamples []*pm.Array_Sample
+	protoSample := &pm.Array_Sample{
 		Service:      "Test",
 		Name:         "test_counter",
 		Kind:         "c",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
+	}
+	protoSamples = append(protoSamples, protoSample)
+	protoArraySample := &pm.Array{
+		Samples: protoSamples,
 	}
 
-	out, err := proto.Marshal(protoSample)
+	out, err := proto.Marshal(protoArraySample)
 	assert.Nil(ss.T(), err, "fail at marshal protobuf")
 
 	conn, err := net.Dial("tcp", "0.0.0.0:8080")

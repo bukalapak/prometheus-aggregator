@@ -34,7 +34,7 @@ func (cs *CollectorSuite) TestWrite() {
 		Kind:         "c",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	TestGauge := &pr.Sample{
 		Service:      "Test",
@@ -42,7 +42,7 @@ func (cs *CollectorSuite) TestWrite() {
 		Kind:         "g",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	TestHistogram := &pr.Sample{
 		Service:      "Test",
@@ -50,7 +50,7 @@ func (cs *CollectorSuite) TestWrite() {
 		Kind:         "h",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	TestHistogramLinearFail := &pr.Sample{
 		Service:      "Test",
@@ -58,7 +58,7 @@ func (cs *CollectorSuite) TestWrite() {
 		Kind:         "hl",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{},
+		HistogramDef: []float64{},
 	}
 	TestHistogramLinear := &pr.Sample{
 		Service:      "Test",
@@ -66,7 +66,7 @@ func (cs *CollectorSuite) TestWrite() {
 		Kind:         "hl",
 		Label:        make(map[string]string),
 		Value:        1,
-		HistogramDef: []string{"3.1415", "3.1415", "22"},
+		HistogramDef: []float64{3.1415, 3.1415, 22},
 	}
 
 	err := cs.collector.Write(TestCounter, TestRegistry)

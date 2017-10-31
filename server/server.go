@@ -25,10 +25,10 @@ func New(pProtor *pr.Protor) *Server {
 }
 
 func MetricProtor(Name string, Kind string, Value float64, start time.Time) *pr.Sample {
-	HD := []string{}
+	HD := []float64{}
 	if Kind == "h" {
 		Value = float64(time.Since(start).Nanoseconds())
-		HD = []string{".005", ".01", ".025", ".05", ".1", ".25", ".5", "1", "2.5", "5", "10"}
+		HD = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 	}
 	return &pr.Sample{
 		Service:      "metrics",
@@ -59,26 +59,31 @@ func (s *Server) Run(ip string, port string) {
 }
 
 func (s *Server) handleRequest(conn net.Conn) {
-	tS := time.Now()
+	sTime := time.Now()
 	reqLen, err := conn.Read(s.buf)
 	if err != nil {
-		exitOnFatal(err, "fail at reading")
+		log.Info("err at reading ", err)
+		return
 	}
-	protodata := &protomodel.Sample{}
+	protodata := &protomodel.Array{}
 	err = proto.Unmarshal(s.buf[0:reqLen], protodata)
 	if err != nil {
-		exitOnFatal(err, "fail at unmarshal protobuf")
+		log.Info("err at unmarshal protobuff ", err)
+		return
 	}
-	pSample := ProtoToSample(protodata)
-	err = s.Protor.WriteToRegistry(pSample)
-	if err != nil {
-		exitOnFatal(err, "fail while writing registry")
+	for _, sample := range protodata.Samples {
+		err = s.Protor.WriteToRegistry(ProtoToSample(sample))
+		if err != nil {
+			log.Info("error at writing to registry", err)
+		}
 	}
-	err = s.Protor.WriteToRegistry(MetricProtor("app_request_handle_duration_ns", "h", 1, tS))
-	err = s.Protor.WriteToRegistry(MetricProtor("app_total_sample", "c", 1, tS))
+
+	err = s.Protor.WriteToRegistry(MetricProtor("app_request_handle_duration_ns", "h", 1, sTime))
+	err = s.Protor.WriteToRegistry(MetricProtor("app_total_sample", "c", float64(len(protodata.Samples)), sTime))
+
 }
 
-func ProtoToSample(pd *protomodel.Sample) *pr.Sample {
+func ProtoToSample(pd *protomodel.Array_Sample) *pr.Sample {
 	return &pr.Sample{
 		Service:      pd.Service,
 		Name:         pd.Name,

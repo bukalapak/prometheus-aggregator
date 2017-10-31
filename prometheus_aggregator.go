@@ -15,7 +15,7 @@ type Sample struct {
 	Kind         string            `protobuf:"bytes,3,opt,name=kind" json:"kind,omitempty"`
 	Label        map[string]string `protobuf:"bytes,4,rep,name=label" json:"label,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Value        float64           `protobuf:"fixed64,5,opt,name=value" json:"value,omitempty"`
-	HistogramDef []string          `protobuf:"bytes,6,rep,name=histogramDef" json:"histogramDef,omitempty"`
+	HistogramDef []float64         `protobuf:"bytes,6,rep,name=histogramDef" json:"histogramDef,omitempty"`
 }
 
 type CollectorInterface interface {
