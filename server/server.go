@@ -16,10 +16,10 @@ type Server struct {
 	buf    []byte
 }
 
-func New(pProtor *pr.Protor) *Server {
+func New(pProtor *pr.Protor, buffersize int) *Server {
 	s := Server{
 		Protor: pProtor,
-		buf:    make([]byte, 1024),
+		buf:    make([]byte, buffersize),
 	}
 	return &s
 }
@@ -52,7 +52,7 @@ func (s *Server) Run(ip string, port string) {
 	for {
 		conn, err := tcp.Accept()
 		if err != nil {
-			exitOnFatal(err, "Fail at connecting to incoming connection")
+			log.Info(err, "Fail at connecting to incoming connection")
 		}
 		go s.handleRequest(conn)
 	}
@@ -78,8 +78,9 @@ func (s *Server) handleRequest(conn net.Conn) {
 		}
 	}
 
-	err = s.Protor.WriteToRegistry(MetricProtor("app_request_handle_duration_ns", "h", 1, sTime))
-	err = s.Protor.WriteToRegistry(MetricProtor("app_total_sample", "c", float64(len(protodata.Samples)), sTime))
+	err = s.Protor.WriteToRegistry(MetricProtor("app_handle_requests_duration_ns", "h", 1, sTime))
+	err = s.Protor.WriteToRegistry(MetricProtor("app_samples_total", "c", float64(len(protodata.Samples)), sTime))
+	err = s.Protor.WriteToRegistry(MetricProtor("app_requests_total", "c", 1, sTime))
 
 }
 

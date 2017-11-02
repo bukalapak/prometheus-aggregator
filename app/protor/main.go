@@ -42,8 +42,9 @@ type config struct {
 	// MaxProcs limits number of processors used by the app.
 	MaxProcs int `envconfig:"default=0"`
 
-	// Metrics path for prometheus scrape
-	MetricsPath string `envconfig:"default=/metrics"`
+	// ExpirationDate limits the time of vector life when its not used
+	// numbers of day
+	ExpirationDate int `envconfig:"default=1"`
 }
 
 func main() {
@@ -64,26 +65,25 @@ func main() {
 		log.Debugf("Processor limiting, Req: %d, MaxAvailable: %d, NumCPU: %d", cfg.MaxProcs, nGot, runtime.NumCPU())
 	}
 
-	pCollector := collector.New()
+	pCollector := collector.New(cfg.ExpirationDate)
 	pRegistryManager := registrymanager.New()
 	pProtor := protor.New(pCollector, pRegistryManager)
 	pHandler := handler.New(pRegistryManager)
-	pServer := server.New(pProtor)
+	pServer := server.New(pProtor, cfg.TCPBufferSize)
 
 	log.Infof("Starting samples server => %s:%s with buffersize %d", cfg.TCPHost, cfg.TCPPort, cfg.TCPBufferSize)
 	go pServer.Run(cfg.TCPHost, cfg.TCPPort)
 
-	log.Infof("Handle metrics endpoint in %s", cfg.MetricsPath)
+	log.Info("Handle metrics endpoint in /metrics")
 	metricsListenOn := fmt.Sprintf("%s:%d", cfg.MetricsHost, cfg.MetricsPort)
 	log.Infof("Starting metrics server => %s", metricsListenOn)
+
 	http.HandleFunc("/healthz", pHandler.Healthz)
 	http.Handle("/", pHandler.EndPoint())
-	if err := http.ListenAndServe(metricsListenOn, nil); err != nil {
-		exitOnFatal(err, "metric server")
-	}
-}
 
-func exitOnFatal(err error, loc string) {
-	log.Fatalf("EXIT on %s: err=%s\n", loc, err)
-	syscall.Exit(1)
+	if err := http.ListenAndServe(metricsListenOn, nil); err != nil {
+		log.Fatalf("EXIT on metric server: err=%s\n", err)
+		syscall.Exit(1)
+	}
+
 }

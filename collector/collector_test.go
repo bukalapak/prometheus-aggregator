@@ -21,7 +21,7 @@ func TestCollectorSuite(t *testing.T) {
 }
 
 func (cs *CollectorSuite) SetupSuite() {
-	cs.collector = co.New()
+	cs.collector = co.New(1)
 }
 
 func (cs *CollectorSuite) TestWrite() {

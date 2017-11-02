@@ -22,19 +22,22 @@ type Collector struct {
 
 	histograms   map[string]*dynamicvector.Histogram
 	histogramsMu sync.Mutex
+
+	ExpirationTime time.Duration
 }
 
-func New() *Collector {
+func New(days int) *Collector {
 	return &Collector{
-		mapFlag:    make(map[string]bool),
-		counters:   make(map[string]*dynamicvector.Counter),
-		gauges:     make(map[string]*dynamicvector.Gauge),
-		histograms: make(map[string]*dynamicvector.Histogram),
+		mapFlag:        make(map[string]bool),
+		counters:       make(map[string]*dynamicvector.Counter),
+		gauges:         make(map[string]*dynamicvector.Gauge),
+		histograms:     make(map[string]*dynamicvector.Histogram),
+		ExpirationTime: time.Duration(days*24) * time.Hour,
 	}
 }
 
 func (c *Collector) Write(s *protor.Sample, Registry *prometheus.Registry) error {
-	ExpirationTime := 24 * time.Hour
+	ExpirationTime := c.ExpirationTime
 	plabel := prometheus.Labels{}
 	plabel = s.Label
 	//check if vector exist, make one if not.

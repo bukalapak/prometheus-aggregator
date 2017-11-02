@@ -25,10 +25,10 @@ func TestServerSuite(t *testing.T) {
 }
 
 func (s *ServerSuite) SetupSuite() {
-	collector := co.New()
+	collector := co.New(1)
 	registryManager := rm.New()
 	pProtor := pr.New(collector, registryManager)
-	s.server = server.New(pProtor)
+	s.server = server.New(pProtor, 65536)
 	go s.server.Run("0.0.0.0", "8080")
 }
 
