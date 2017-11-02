@@ -50,7 +50,7 @@ There are four major components: sample server, registry manager, collector, and
 
 #### Sample server
 
-Sample server is responsible for listening for the incoming samples via UDP, parsing each packet to samples and handing over to collector for processing.
+Sample server is responsible for listening for the incoming samples via TCP, parsing each packet to samples and handing over to collector for processing.
 As of now there is single goroutine responsible for reading and parsing.
 
 #### Registry manager
@@ -68,9 +68,11 @@ Collector is responsible for:
 
 #### Handler
 
-Handler is responsible for exposing each registry metrics to their respective endpoint. E.g :
-exposing attache registry metrics on "/attache".
-
+Handler is responsible for exposing each registry metrics to their respective endpoint. 
+E.g :
+````
+    exposing attache registry metrics on "/attache".
+````
 ### Metrics
 
 | name | module | type | unit | desc |
