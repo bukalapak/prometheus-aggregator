@@ -79,7 +79,7 @@ E.g :
 |------|--------|------|------|------|
 | app_handle_requests_total | server | counter | - | Number of request entering server. |
 | app_samples_total | server | counter | - | Number of samples entering server. |
-| app_handle_requests_duration_ns | server | summary | nanosecond | Time in ns spent on handling single request. |
+| app_handle_requests_duration_ns | server | histogram | nanosecond | Time in ns spent on handling single request. |
 
 ## Usage
 
