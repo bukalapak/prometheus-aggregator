@@ -7,16 +7,12 @@ Short-lived client is shooting samples via TCP toward aggregator server which pa
 The storage is then scraped using standard Prometheus HTTP endpoint (both text and binary exposition formats are supported).
 
     +----------+              +-------------------------+                                              +--------------+
-    |  client  |---( TCP )--->|  prometheus_aggregator  |<---( scrape /metrics && /$servicename$ )---|  Prometheus  |
+    |  client  |---( TCP )--->|  prometheus_aggregator  |<---( scrape /metrics && /$servicename$ )---  |  Prometheus  |
     +----------+              +-------------------------+                                              +--------------+
 
 ## Protobuf format
 
 Protobuf format for samples metrics is a serialized protocol buffer data. see Attache for serializing protobuf example.
-
-###  sample line
-
-    name|type|typeConfig|labels|value
 
 | field | desc               | allowed values |
 |-------|--------------------|----------------|
@@ -36,28 +32,15 @@ As of now following metrics are supported:
 - histogram with linear buckets
 
 ### Counters
-
-    name_of_2_metric_total|c|56
-    name_of_1_metric_total|c|labelA=labelValueA;label2=labelValue2|12.345
-
 ### Gauges
-
-    name_of_3_metric|g|labelA=labelValueA;label2=labelValue2|7.3
-    name_of_3_metric|g|17.3
-
 ### Histograms
 
 If no bucket specified, use Prometheus default buckets
-
-    name_of_1_metric_seconds|h|12.345
-    name_of_1_metric_seconds|h|0.5;1;2;5;10|labelA=labelValueA;label2=labelValue2|12.345
     
 ### Histograms with linear buckets
 
 Type config values are passed to LinearBuckets(start, width float64, count int)
 
-    name_of_1_metric_seconds|hl|3.3;2.0;5|12.345
-    name_of_1_metric_seconds|hl|3.3;2.0;5|labelA=labelValueA;label2=labelValue2|12.345
 
 ## Internals
 
