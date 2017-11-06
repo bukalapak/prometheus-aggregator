@@ -1,0 +1,47 @@
+apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: "prometheus_aggregator-protor-{{.CurrentEnvironment}}"
+  labels:
+    project: prometheus_aggregator
+    service: protor
+    env: {{.CurrentEnvironment}}
+spec:
+  schedule: 9090
+  jobTemplate:
+    spec:
+      selector:
+        matchLabels:
+          project: prometheus_aggregator
+          service: protor
+          env: {{.CurrentEnvironment}}
+      template:
+        metadata:
+          labels:
+            project: prometheus_aggregator
+            service: protor
+            release: '{{.Version}}'
+            env: {{.CurrentEnvironment}}
+        spec:
+          nodeSelector:
+            env: production
+          imagePullSecrets:
+          - name: blregistry
+          containers:
+          - name: prometheus_aggregator-protor
+            image: registry.bukalapak.io/bukalapak/prometheus_aggregator/protor:{{.Version}}
+            command:
+              - envconsul
+              - -once
+              - -consul=$(CONSUL1)
+              - -sanitize
+              - -upcase
+              - -prefix=prometheus_aggregator
+              - protor
+            env:
+            - name: CONSUL
+              valueFrom:
+                configMapKeyRef:
+                  name: consul-config
+                  key: node1
+          restartPolicy: Never
