@@ -38,7 +38,7 @@ func Test_Race_Collector_WriteVsProcessVsCollect(t *testing.T) {
 	}
 
 	defer thInitSampleHasher(hashMD5)()
-	c := newCollector()
+	c := newCollector(24 * time.Hour)
 	c.shutdownTimeout = time.Millisecond * 100
 
 	go c.process()

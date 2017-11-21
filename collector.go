@@ -32,14 +32,14 @@ type collector struct {
 	// sampleParser parses samples represented in transport (text) format and converts it to samples
 	sampleParser func(r io.Reader) ([]sample, error)
 
-	counters map[string]prometheus.Counter
+	counters map[string]*UpdatingCounter
 	// countersMu protects scraping functions from interfering with processing
 	countersMu sync.RWMutex
 
-	gauges   map[string]prometheus.Gauge
+	gauges   map[string]*UpdatingGauge
 	gaugesMu sync.RWMutex
 
-	histograms   map[string]prometheus.Histogram
+	histograms   map[string]*UpdatingHistogram
 	histogramsMu sync.RWMutex
 
 	testHookProcessSampleDone func()
@@ -55,18 +55,22 @@ type collector struct {
 	metricAppDuration        prometheus.Gauge
 	metricQueueLength        prometheus.Gauge
 	metricProcessingDuration *prometheus.SummaryVec
+
+	// expiryTime defines the duration for expiring metrics.
+	expiryTime time.Duration
 }
 
-func newCollector() *collector {
+func newCollector(et time.Duration) *collector {
 	return &collector{
 		ingressCh:                 make(chan *sample, ingressQueueSize),
-		counters:                  make(map[string]prometheus.Counter),
-		gauges:                    make(map[string]prometheus.Gauge),
-		histograms:                make(map[string]prometheus.Histogram),
+		counters:                  make(map[string]*UpdatingCounter),
+		gauges:                    make(map[string]*UpdatingGauge),
+		histograms:                make(map[string]*UpdatingHistogram),
 		testHookProcessSampleDone: func() {},
 		quitCh:          make(chan struct{}),
 		shutdownDownCh:  make(chan struct{}),
 		shutdownTimeout: time.Second,
+		expiryTime:      et,
 
 		metricAppStart: prometheus.NewGauge(
 			prometheus.GaugeOpts{
@@ -110,19 +114,19 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 
 	c.countersMu.RLock()
 	for _, m := range c.counters {
-		m.Collect(ch)
+		m.Counter.Collect(ch)
 	}
 	c.countersMu.RUnlock()
 
 	c.gaugesMu.RLock()
 	for _, m := range c.gauges {
-		m.Collect(ch)
+		m.Gauge.Collect(ch)
 	}
 	c.gaugesMu.RUnlock()
 
 	c.histogramsMu.RLock()
 	for _, m := range c.histograms {
-		m.Collect(ch)
+		m.Histogram.Collect(ch)
 	}
 	c.histogramsMu.RUnlock()
 }
@@ -141,6 +145,7 @@ func (c *collector) start() {
 	c.metricAppStart.Set(float64(c.startTime.UnixNano()) / 1e9)
 
 	go c.process()
+	go c.expire()
 }
 
 func (c *collector) stop() error {
@@ -188,36 +193,42 @@ func (c *collector) process() {
 				// race avoidance is not needed on existence check as "process" is the only one modifying storage
 				m, found := c.counters[string(h)]
 				if !found {
-					m = prometheus.NewCounter(
-						prometheus.CounterOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-						},
+					m = NewUpdatingCounter(
+						prometheus.NewCounter(
+							prometheus.CounterOpts{
+								Name:        s.name,
+								Help:        "auto",
+								ConstLabels: s.labels,
+							},
+						),
 					)
 					c.countersMu.Lock()
 					c.counters[string(h)] = m
 					c.countersMu.Unlock()
 				}
 
-				m.Add(s.value)
+				m.Counter.Add(s.value)
+				m.Touch()
 
 			case sampleGauge:
 				m, found := c.gauges[string(h)]
 				if !found {
-					m = prometheus.NewGauge(
-						prometheus.GaugeOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-						},
+					m = NewUpdatingGauge(
+						prometheus.NewGauge(
+							prometheus.GaugeOpts{
+								Name:        s.name,
+								Help:        "auto",
+								ConstLabels: s.labels,
+							},
+						),
 					)
 					c.gaugesMu.Lock()
 					c.gauges[string(h)] = m
 					c.gaugesMu.Unlock()
 				}
 
-				m.Set(s.value)
+				m.Gauge.Set(s.value)
+				m.Touch()
 
 			case sampleHistogramLinear:
 				m, found := c.histograms[string(h)]
@@ -225,20 +236,23 @@ func (c *collector) process() {
 					start, _ := strconv.ParseFloat(s.histogramDef[0], 10)
 					width, _ := strconv.ParseFloat(s.histogramDef[1], 10)
 					count, _ := strconv.Atoi(s.histogramDef[2])
-					m = prometheus.NewHistogram(
-						prometheus.HistogramOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-							Buckets:     prometheus.LinearBuckets(start, width, count),
-						},
+					m = NewUpdatingHistogram(
+						prometheus.NewHistogram(
+							prometheus.HistogramOpts{
+								Name:        s.name,
+								Help:        "auto",
+								ConstLabels: s.labels,
+								Buckets:     prometheus.LinearBuckets(start, width, count),
+							},
+						),
 					)
 					c.histogramsMu.Lock()
 					c.histograms[string(h)] = m
 					c.histogramsMu.Unlock()
 				}
 
-				m.Observe(s.value)
+				m.Histogram.Observe(s.value)
+				m.Touch()
 
 			case sampleHistogram:
 				m, found := c.histograms[string(h)]
@@ -252,20 +266,23 @@ func (c *collector) process() {
 						buckets = append(buckets, j)
 					}
 
-					m = prometheus.NewHistogram(
-						prometheus.HistogramOpts{
-							Name:        s.name,
-							Help:        "auto",
-							ConstLabels: s.labels,
-							Buckets:     buckets,
-						},
+					m = NewUpdatingHistogram(
+						prometheus.NewHistogram(
+							prometheus.HistogramOpts{
+								Name:        s.name,
+								Help:        "auto",
+								ConstLabels: s.labels,
+								Buckets:     buckets,
+							},
+						),
 					)
 					c.histogramsMu.Lock()
 					c.histograms[string(h)] = m
 					c.histogramsMu.Unlock()
 				}
 
-				m.Observe(s.value)
+				m.Histogram.Observe(s.value)
+				m.Touch()
 			}
 
 			c.testHookProcessSampleDone()
@@ -277,5 +294,39 @@ func (c *collector) process() {
 			close(c.shutdownDownCh)
 			return
 		}
+	}
+}
+
+func (c *collector) expire() {
+	ticker := time.NewTicker(c.expiryTime)
+	select {
+	case <-ticker.C:
+		now := time.Now()
+
+		c.countersMu.Lock()
+		for k, m := range c.counters {
+			if now.Sub(m.UpdatedAt) > c.expiryTime {
+				delete(c.counters, k)
+			}
+		}
+		c.countersMu.Unlock()
+
+		c.gaugesMu.Lock()
+		for k, m := range c.gauges {
+			if now.Sub(m.UpdatedAt) > c.expiryTime {
+				delete(c.counters, k)
+			}
+		}
+		c.gaugesMu.Unlock()
+
+		c.histogramsMu.Lock()
+		for k, m := range c.histograms {
+			if now.Sub(m.UpdatedAt) > c.expiryTime {
+				delete(c.counters, k)
+			}
+		}
+		c.histogramsMu.Unlock()
+	case <-c.quitCh:
+		return
 	}
 }

@@ -12,8 +12,10 @@ import (
 	a "github.com/stretchr/testify/assert"
 )
 
+const defaultExpiryTime = 24 * time.Hour
+
 func Test_Collector_New(t *testing.T) {
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	a.IsType(t, &collector{}, c)
 	a.Equal(t, ingressQueueSize, cap(c.ingressCh))
 	a.NotNil(t, c.counters)
@@ -55,7 +57,7 @@ var tfCollectorSamples = []*sample{
 }
 
 func Test_Collector_Write_Success(t *testing.T) {
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	for _, s := range tfCollectorSamples {
 		c.Write(s)
 	}
@@ -161,7 +163,7 @@ func Test_Collector_Process_Success_NewHashes(t *testing.T) {
 	for sym, tc := range tests {
 		sampleHasher = tc.h
 
-		c := newCollector()
+		c := newCollector(defaultExpiryTime)
 		thCollectorProcessPopulate(c, tfCollectorSamples)
 		thCollectorProcessSynchronise(t, c)
 
@@ -187,7 +189,7 @@ func Test_Collector_Process_Success_NewHashes(t *testing.T) {
 
 func Test_Collector_Process_Success_Existing(t *testing.T) {
 	defer thInitSampleHasher(hashMD5)()
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	// duplicate to simulate adding existing samples
 	thCollectorProcessPopulate(c, tfCollectorSamples)
 	thCollectorProcessPopulate(c, tfCollectorSamples)
@@ -214,7 +216,7 @@ func Test_Collector_Process_Success_Existing(t *testing.T) {
 
 func Test_Collector_Process_Success_Values(t *testing.T) {
 	defer thInitSampleHasher(hashMD5)()
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	// duplicate to simulate adding existing samples
 	thCollectorProcessPopulate(c, tfCollectorSamples)
 	thCollectorProcessPopulate(c, tfCollectorSamples)
@@ -226,12 +228,12 @@ func Test_Collector_Process_Success_Values(t *testing.T) {
 		switch s.kind {
 		case sampleCounter:
 			m := c.counters[string(s.hash())]
-			m.Write(&mm)
+			m.Counter.Write(&mm)
 			// samples were added 3 times
 			a.Equal(t, s.value*3, mm.Counter.GetValue())
 		case sampleGauge:
 			m := c.gauges[string(s.hash())]
-			m.Write(&mm)
+			m.Gauge.Write(&mm)
 			a.Equal(t, s.value, mm.Gauge.GetValue())
 		}
 	}
@@ -249,7 +251,7 @@ func Test_Collector_Process_Success_HistogramLinear(t *testing.T) {
 	s2.value = 20
 
 	defer thInitSampleHasher(hashMD5)()
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	c.ingressCh <- &s1
 	c.ingressCh <- &s2
 
@@ -257,7 +259,7 @@ func Test_Collector_Process_Success_HistogramLinear(t *testing.T) {
 
 	var mm dto.Metric
 	m := c.histograms[string(s1.hash())]
-	m.Write(&mm)
+	m.Histogram.Write(&mm)
 	a.Equal(t, uint64(2), mm.Histogram.GetSampleCount())
 	a.Equal(t, float64(30), mm.Histogram.GetSampleSum())
 	if !a.Len(t, mm.Histogram.GetBucket(), 10) {
@@ -271,7 +273,7 @@ func Test_Collector_Process_Success_HistogramLinear(t *testing.T) {
 }
 
 func Test_Collector_Collect_NoMetric(t *testing.T) {
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 	metricCh := make(chan prometheus.Metric, 2048)
 	c.Collect(metricCh)
 
@@ -287,14 +289,14 @@ func Test_Collector_Collect_NoMetric(t *testing.T) {
 }
 
 func Test_Collector_Collect_MetricFromSamples(t *testing.T) {
-	c := newCollector()
+	c := newCollector(defaultExpiryTime)
 
 	// set-up
-	c.counters["c1"] = prometheus.NewCounter(prometheus.CounterOpts{Name: "counter_A", Help: "auto"})
-	c.counters["c2"] = prometheus.NewCounter(prometheus.CounterOpts{Name: "counter_B", Help: "auto"})
-	c.gauges["g1"] = prometheus.NewGauge(prometheus.GaugeOpts{Name: "gauge_A", Help: "auto"})
-	c.gauges["g2"] = prometheus.NewGauge(prometheus.GaugeOpts{Name: "gauge_B", Help: "auto"})
-	c.histograms["hl1"] = prometheus.NewHistogram(prometheus.HistogramOpts{Name: "histLinear_A", Help: "auto"})
+	c.counters["c1"] = NewUpdatingCounter(prometheus.NewCounter(prometheus.CounterOpts{Name: "counter_A", Help: "auto"}))
+	c.counters["c2"] = NewUpdatingCounter(prometheus.NewCounter(prometheus.CounterOpts{Name: "counter_B", Help: "auto"}))
+	c.gauges["g1"] = NewUpdatingGauge(prometheus.NewGauge(prometheus.GaugeOpts{Name: "gauge_A", Help: "auto"}))
+	c.gauges["g2"] = NewUpdatingGauge(prometheus.NewGauge(prometheus.GaugeOpts{Name: "gauge_B", Help: "auto"}))
+	c.histograms["hl1"] = NewUpdatingHistogram(prometheus.NewHistogram(prometheus.HistogramOpts{Name: "histLinear_A", Help: "auto"}))
 
 	expDescMap := make(map[string]prometheus.Desc)
 	descHash := func(d *prometheus.Desc) []byte {
@@ -304,11 +306,11 @@ func Test_Collector_Collect_MetricFromSamples(t *testing.T) {
 		d := me.Desc()
 		m[string(descHash(d))] = *d
 	}
-	addDesc(expDescMap, c.counters["c1"])
-	addDesc(expDescMap, c.counters["c2"])
-	addDesc(expDescMap, c.gauges["g1"])
-	addDesc(expDescMap, c.gauges["g2"])
-	addDesc(expDescMap, c.histograms["hl1"])
+	addDesc(expDescMap, c.counters["c1"].Counter)
+	addDesc(expDescMap, c.counters["c2"].Counter)
+	addDesc(expDescMap, c.gauges["g1"].Gauge)
+	addDesc(expDescMap, c.gauges["g2"].Gauge)
+	addDesc(expDescMap, c.histograms["hl1"].Histogram)
 	addDesc(expDescMap, c.metricAppStart)
 	addDesc(expDescMap, c.metricAppDuration)
 	addDesc(expDescMap, c.metricQueueLength)

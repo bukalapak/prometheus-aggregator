@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,6 +52,10 @@ type config struct {
 
 	// Metrics path for prometheus scrape
 	MetricsPath string `envconfig:"default=/metrics"`
+
+	// ExpiryTime is the maximum duration for each metric to not be updated
+	// before it is evicted from storage.
+	ExpiryTime time.Duration `envconfig:"default=24h"`
 }
 
 func main() {
@@ -82,7 +87,7 @@ func main() {
 	log.Debugf("Sample hasher used: %s", cfg.SampleHasher)
 
 	// TODO(szpakas): attach to signals for graceful shutdown and call c.stop()
-	c := newCollector()
+	c := newCollector(cfg.ExpiryTime)
 	prometheus.MustRegister(c)
 	c.start()
 
