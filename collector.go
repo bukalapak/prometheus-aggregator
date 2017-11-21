@@ -299,11 +299,13 @@ func (c *collector) process() {
 
 func (c *collector) processExpiring() {
 	ticker := time.NewTicker(c.expiryTime)
-	select {
-	case <-ticker.C:
-		c.expire()
-	case <-c.quitCh:
-		return
+	for {
+		select {
+		case <-ticker.C:
+			c.expire()
+		case <-c.quitCh:
+			return
+		}
 	}
 }
 
@@ -321,7 +323,7 @@ func (c *collector) expire() {
 	c.gaugesMu.Lock()
 	for k, m := range c.gauges {
 		if now.Sub(m.UpdatedAt) > c.expiryTime {
-			delete(c.counters, k)
+			delete(c.gauges, k)
 		}
 	}
 	c.gaugesMu.Unlock()
@@ -329,7 +331,7 @@ func (c *collector) expire() {
 	c.histogramsMu.Lock()
 	for k, m := range c.histograms {
 		if now.Sub(m.UpdatedAt) > c.expiryTime {
-			delete(c.counters, k)
+			delete(c.histograms, k)
 		}
 	}
 	c.histogramsMu.Unlock()
