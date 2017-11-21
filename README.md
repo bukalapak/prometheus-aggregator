@@ -125,6 +125,7 @@ app_start_timestamp_seconds              | collector | gauge   | second     | Un
 app_duration_seconds                     | collector | gauge   | second     | Time in seconds since start of the app.
 app_collector_queue_length               | collector | gauge   | -          | Number of elements waiting in collector queue for processing.
 app_collector_processing_duration_ns     | collector | summary | nanosecond | Duration of the processing in the collector in ns.
+app_collector_expiring_duration_ns       | collector | summary | nanosecond | Duration of metrics expiring in the collector in ns.
 app_ingress_requests_total               | server    | counter | -          | Number of request entering server.
 app_ingress_samples_total                | server    | counter | -          | Number of samples entering server.
 app_ingress_request_handling_duration_ns | server    | summary | nanosecond | Time in ns spent on handling single request.

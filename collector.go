@@ -55,6 +55,7 @@ type collector struct {
 	metricAppDuration        prometheus.Gauge
 	metricQueueLength        prometheus.Gauge
 	metricProcessingDuration *prometheus.SummaryVec
+	metricExpiringDuration   *prometheus.SummaryVec
 
 	// expiryTime defines the duration for expiring metrics.
 	expiryTime time.Duration
@@ -99,6 +100,14 @@ func newCollector(et time.Duration) *collector {
 			},
 			[]string{"sampleKind"},
 		),
+
+		metricExpiringDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name: "app_collector_expiring_duration_ns",
+				Help: "Duration of the expiring in the collector in ns.",
+			},
+			[]string{"sampleKind"},
+		),
 	}
 }
 
@@ -111,6 +120,7 @@ func (c *collector) Collect(ch chan<- prometheus.Metric) {
 
 	c.metricQueueLength.Collect(ch)
 	c.metricProcessingDuration.Collect(ch)
+	c.metricExpiringDuration.Collect(ch)
 
 	c.countersMu.RLock()
 	for _, m := range c.counters {
@@ -137,6 +147,7 @@ func (c *collector) Describe(ch chan<- *prometheus.Desc) {
 	c.metricAppDuration.Describe(ch)
 	c.metricQueueLength.Describe(ch)
 	c.metricProcessingDuration.Describe(ch)
+	c.metricExpiringDuration.Describe(ch)
 }
 
 func (c *collector) start() {
@@ -311,28 +322,38 @@ func (c *collector) processExpiring() {
 
 func (c *collector) expire() {
 	now := time.Now()
+	var ts time.Time
 
 	c.countersMu.Lock()
+	ts = time.Now()
 	for k, m := range c.counters {
 		if now.Sub(m.UpdatedAt) > c.expiryTime {
 			delete(c.counters, k)
 		}
 	}
 	c.countersMu.Unlock()
+	c.metricExpiringDuration.WithLabelValues("counter").
+		Observe(float64(time.Since(ts).Nanoseconds()))
 
 	c.gaugesMu.Lock()
+	ts = time.Now()
 	for k, m := range c.gauges {
 		if now.Sub(m.UpdatedAt) > c.expiryTime {
 			delete(c.gauges, k)
 		}
 	}
 	c.gaugesMu.Unlock()
+	c.metricExpiringDuration.WithLabelValues("gauge").
+		Observe(float64(time.Since(ts).Nanoseconds()))
 
 	c.histogramsMu.Lock()
+	ts = time.Now()
 	for k, m := range c.histograms {
 		if now.Sub(m.UpdatedAt) > c.expiryTime {
 			delete(c.histograms, k)
 		}
 	}
 	c.histogramsMu.Unlock()
+	c.metricExpiringDuration.WithLabelValues("histogram").
+		Observe(float64(time.Since(ts).Nanoseconds()))
 }
