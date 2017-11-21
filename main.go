@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,6 +52,10 @@ type config struct {
 
 	// Metrics path for prometheus scrape
 	MetricsPath string `envconfig:"default=/metrics"`
+
+	// ExpiryTime is the maximum duration for each metric to not be updated
+	// before it is evicted from storage.
+	ExpiryTime time.Duration `envconfig:"default=24h"`
 }
 
 func main() {
@@ -82,12 +87,12 @@ func main() {
 	log.Debugf("Sample hasher used: %s", cfg.SampleHasher)
 
 	// TODO(szpakas): attach to signals for graceful shutdown and call c.stop()
-	c := newCollector()
+	c := newCollector(cfg.ExpiryTime)
 	prometheus.MustRegister(c)
 	c.start()
 
 	s := newServer(c.Write, cfg.UDPBufferSize)
-	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize)
+	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d, expiry time %s", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize, cfg.ExpiryTime.String())
 	if err := s.Listen(cfg.UDPHost, cfg.UDPPort); err != nil {
 		exitOnFatal(err, "UDP server init")
 	}
