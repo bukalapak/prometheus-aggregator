@@ -92,7 +92,7 @@ func main() {
 	c.start()
 
 	s := newServer(c.Write, cfg.UDPBufferSize)
-	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize)
+	log.Infof("Starting ingrees samples server => %s:%d with buffersize %d, expiry time %s", cfg.UDPHost, cfg.UDPPort, cfg.UDPBufferSize, cfg.ExpiryTime.String())
 	if err := s.Listen(cfg.UDPHost, cfg.UDPPort); err != nil {
 		exitOnFatal(err, "UDP server init")
 	}
