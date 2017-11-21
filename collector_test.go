@@ -21,6 +21,7 @@ func Test_Collector_New(t *testing.T) {
 	a.NotNil(t, c.counters)
 	a.NotNil(t, c.gauges)
 	a.NotNil(t, c.histograms)
+	a.Equal(t, c.expiryTime, defaultExpiryTime)
 }
 
 var tfCollectorSamples = []*sample{
@@ -331,4 +332,24 @@ func Test_Collector_Collect_MetricFromSamples(t *testing.T) {
 		addDesc(gotDescMap, <-metricCh)
 	}
 	a.Equal(t, expDescMap, gotDescMap)
+}
+
+func Test_Collector_Expire(t *testing.T) {
+	defer thInitSampleHasher(hashMD5)()
+	c := newCollector(defaultExpiryTime)
+	thCollectorProcessPopulate(c, tfCollectorSamples)
+	thCollectorProcessSynchronise(t, c)
+	l := len(c.counters)
+
+	var k string
+	var m *UpdatingCounter
+	for k, m = range c.counters {
+		break
+	}
+	a.NotNil(t, c.counters[k])
+	m.UpdatedAt = time.Now().Add(-48 * time.Hour)
+	c.expire()
+
+	a.Nil(t, c.counters[k])
+	a.Equal(t, l-1, len(c.counters))
 }

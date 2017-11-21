@@ -145,7 +145,7 @@ func (c *collector) start() {
 	c.metricAppStart.Set(float64(c.startTime.UnixNano()) / 1e9)
 
 	go c.process()
-	go c.expire()
+	go c.processExpiring()
 }
 
 func (c *collector) stop() error {
@@ -297,36 +297,40 @@ func (c *collector) process() {
 	}
 }
 
-func (c *collector) expire() {
+func (c *collector) processExpiring() {
 	ticker := time.NewTicker(c.expiryTime)
 	select {
 	case <-ticker.C:
-		now := time.Now()
-
-		c.countersMu.Lock()
-		for k, m := range c.counters {
-			if now.Sub(m.UpdatedAt) > c.expiryTime {
-				delete(c.counters, k)
-			}
-		}
-		c.countersMu.Unlock()
-
-		c.gaugesMu.Lock()
-		for k, m := range c.gauges {
-			if now.Sub(m.UpdatedAt) > c.expiryTime {
-				delete(c.counters, k)
-			}
-		}
-		c.gaugesMu.Unlock()
-
-		c.histogramsMu.Lock()
-		for k, m := range c.histograms {
-			if now.Sub(m.UpdatedAt) > c.expiryTime {
-				delete(c.counters, k)
-			}
-		}
-		c.histogramsMu.Unlock()
+		c.expire()
 	case <-c.quitCh:
 		return
 	}
+}
+
+func (c *collector) expire() {
+	now := time.Now()
+
+	c.countersMu.Lock()
+	for k, m := range c.counters {
+		if now.Sub(m.UpdatedAt) > c.expiryTime {
+			delete(c.counters, k)
+		}
+	}
+	c.countersMu.Unlock()
+
+	c.gaugesMu.Lock()
+	for k, m := range c.gauges {
+		if now.Sub(m.UpdatedAt) > c.expiryTime {
+			delete(c.counters, k)
+		}
+	}
+	c.gaugesMu.Unlock()
+
+	c.histogramsMu.Lock()
+	for k, m := range c.histograms {
+		if now.Sub(m.UpdatedAt) > c.expiryTime {
+			delete(c.counters, k)
+		}
+	}
+	c.histogramsMu.Unlock()
 }
