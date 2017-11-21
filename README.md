@@ -46,18 +46,13 @@ name_of_3_metric|g|7.3
 name|type|typeConfig|labels|value
 ```
 
-field | desc               | allowed values
------ | ------------------ | --------------
-name  | name of the metric | a-zA-Z0-9_
-type  | type of the metric | counter: c<br>
-
-gauge: g<br>
-histogram: h<br>
-histogram with linear buckets: hl type config | additional configuration for the type<br>
-currently used only for histograms | labels | pairs of name and value separated by semicolon (;)<br>
-field is optional | name: a-zA-Z0-9<br>
-value: a-zA-Z0-9\. value | sample value<br>
-negative values are not yet supported | 0-9.
+field       | desc                                                                        | allowed values
+----------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------
+name        | name of the metric                                                          | a-zA-Z0-9_
+type        | type of the metric                                                          | counter: c<br>gauge: g<br>histogram: h<br>histogram with linear buckets: hl
+type config | additional configuration for the type<br>currently used only for histograms |
+labels      | pairs of name and value separated by semicolon (;)<br>field is optional     | name: a-zA-Z0-9<br>value: a-zA-Z0-9\.
+value       | sample value<br>negative values are not yet supported                       | 0-9.
 
 ## Metrics
 
