@@ -38,11 +38,10 @@ func Test_Race_Collector_WriteVsProcessVsCollect(t *testing.T) {
 	}
 
 	defer thInitSampleHasher(hashMD5)()
-	c := newCollector(24 * time.Hour)
+	c := newCollector()
 	c.shutdownTimeout = time.Millisecond * 100
 
 	go c.process()
-	go c.processExpiring()
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -81,7 +80,7 @@ inTesting:
 		select {
 		case err := <-errInWrite:
 			t.Fatal(errors.Wrap(err, "error on write"))
-		case <-time.After(time.Millisecond * 20):
+		case <-time.After(time.Millisecond * 10):
 			t.Fatal("timeout on testing")
 		case <-wgDoneCh:
 			break inTesting

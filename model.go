@@ -1,11 +1,5 @@
 package main
 
-import (
-	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-)
-
 type sampleHasherFunc func(*sample) []byte
 
 // sampleHasher is a hashing function used on samples.
@@ -53,55 +47,4 @@ type sample struct {
 // Should take all elements other than value under consideration.
 func (s *sample) hash() []byte {
 	return sampleHasher(s)
-}
-
-// UpdatingCounter wraps prometheus.Counter, adding last update time.
-type UpdatingCounter struct {
-	Counter   prometheus.Counter
-	UpdatedAt time.Time
-}
-
-// NewUpdatingCounter creates new instance of UpdatingCounter, with UpdatedAt
-// set to creation time.
-func NewUpdatingCounter(c prometheus.Counter) *UpdatingCounter {
-	return &UpdatingCounter{c, time.Now()}
-}
-
-// Touch updates UpdatedAt field to current time.
-func (u *UpdatingCounter) Touch() {
-	u.UpdatedAt = time.Now()
-}
-
-// UpdatingGauge wraps prometheus.Gauge, adding last update time.
-type UpdatingGauge struct {
-	Gauge     prometheus.Gauge
-	UpdatedAt time.Time
-}
-
-// NewUpdatingGauge creates new instance of UpdatingGauge, with UpdatedAt
-// set to creation time.
-func NewUpdatingGauge(c prometheus.Gauge) *UpdatingGauge {
-	return &UpdatingGauge{c, time.Now()}
-}
-
-// Touch updates UpdatedAt field to current time.
-func (u *UpdatingGauge) Touch() {
-	u.UpdatedAt = time.Now()
-}
-
-// UpdatingHistogram wraps prometheus.Histogram, adding last update time.
-type UpdatingHistogram struct {
-	Histogram prometheus.Histogram
-	UpdatedAt time.Time
-}
-
-// NewUpdatingHistogram creates new instance of UpdatingHistogram, with UpdatedAt
-// set to creation time.
-func NewUpdatingHistogram(c prometheus.Histogram) *UpdatingHistogram {
-	return &UpdatingHistogram{c, time.Now()}
-}
-
-// Touch updates UpdatedAt field to current time.
-func (u *UpdatingHistogram) Touch() {
-	u.UpdatedAt = time.Now()
 }
