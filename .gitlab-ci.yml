@@ -14,7 +14,7 @@ variables:
 
 test:
   stage: test
-  image: $(CI_REGISTRY)/sre/gudang/golang:2.1.0
+  image: $CI_REGISTRY/sre/gudang/golang:2.1.0
   <<: *prep-go-env
   script:
     - go test -v
@@ -24,7 +24,7 @@ test:
     - $MODCACHEDIR
 
 compile:
-  image: $(CI_REGISTRY)/sre/gudang/golang:2.1.0
+  image: $CI_REGISTRY/sre/gudang/golang:2.1.0
   stage: test
   script:
     - go build
