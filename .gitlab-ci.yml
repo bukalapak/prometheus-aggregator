@@ -26,7 +26,7 @@ compile:
   image: $CI_REGISTRY/sre/gudang/golang:2.1.0
   stage: test
   script:
-    - go build
+    - go build -o deploy/_output/prometheus-aggregator
   cache:
     key: gomod
     paths:
@@ -34,7 +34,7 @@ compile:
   artifacts:
     expire_in: 1 days
     paths:
-      - prometheus-aggregator
+      - deploy/_output
 
 build-image:
   stage: build
