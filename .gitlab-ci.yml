@@ -1,0 +1,51 @@
+stages:
+    - test
+    - build
+
+variables:
+  MODCACHEDIR: $CI_PROJECT_DIR/.gomod
+  VERSION: v0.0.5
+
+.prep-go-env: &prep-go-env
+  before_script:
+    - mkdir -p $MODCACHEDIR $GOPATH/pkg
+    - ln -s $MODCACHEDIR $GOPATH/pkg/mod
+
+test:
+  stage: test
+  image: $CI_REGISTRY/sre/gudang/golang:2.1.0
+  <<: *prep-go-env
+  script:
+    - go test -v
+  cache:
+    key: gomod
+    paths:
+    - $MODCACHEDIR
+
+compile:
+  image: $CI_REGISTRY/sre/gudang/golang:2.1.0
+  stage: test
+  script:
+    - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o deploy/_output/prometheus-aggregator -mod=readonly -ldflags="-s -w"
+  cache:
+    key: gomod
+    paths:
+      - $MODCACHEDIR
+  artifacts:
+    expire_in: 1 days
+    paths:
+      - deploy/_output
+
+build-image:
+  stage: build
+  image: $CI_REGISTRY/sre/gudang/docker:1.0.0
+  when: manual
+  tags:
+  - bare-metal
+  dependencies:
+  - compile
+  script:
+  - TAG=$CI_REGISTRY/bukalapak/prometheus-aggregator:$VERSION
+  - docker login -u $CI_REGISTRY_USER -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  - docker build --no-cache -t $TAG  .
+  - docker push $TAG
